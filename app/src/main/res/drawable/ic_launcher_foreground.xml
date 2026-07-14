@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- 液态玻璃背景 -->
+    <path
+        android:fillColor="#7C4DFF"
+        android:fillAlpha="0.3"
+        android:pathData="M54,54m-40,0a40,40 0,1 1,80 0a40,40 0,1 1,-80 0" />
+    <path
+        android:fillColor="#9E7BFF"
+        android:fillAlpha="0.2"
+        android:pathData="M54,54m-35,0a35,35 0,1 1,70 0a35,35 0,1 1,-70 0" />
+    <!-- 文件图标 -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:fillAlpha="0.9"
+        android:pathData="M38,30L58,30L68,40L68,78L38,78Z" />
+    <!-- 文件折角 -->
+    <path
+        android:fillColor="#E8DEFF"
+        android:pathData="M58,30L58,40L68,40Z" />
+    <!-- 重命名箭头图标 -->
+    <path
+        android:fillColor="#7C4DFF"
+        android:pathData="M48,52L60,52L60,48L68,55L60,62L60,58L48,58Z" />
+    <path
+        android:fillColor="#7C4DFF"
+        android:pathData="M60,48L60,52L48,52L48,58L60,58L60,62L68,55Z"
+        android:fillAlpha="0.5" />
+    <!-- 玻璃高光 -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:fillAlpha="0.3"
+        android:pathData="M42,35C42,33.9 42.9,33 44,33L50,33C51.1,33 52,33.9 52,35L52,38C52,39.1 51.1,40 50,40L44,40C42.9,40 42,39.1 42,38Z" />
+</vector>
