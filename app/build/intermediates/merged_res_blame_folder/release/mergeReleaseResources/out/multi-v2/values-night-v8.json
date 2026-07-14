@@ -1,0 +1,36 @@
+{
+    "logs": [
+        {
+            "outputFile": "com.filerenamer.app-mergeReleaseResources-45:/values-night-v8/values-night-v8.xml",
+            "map": [
+                {
+                    "source": "/data/data/com.termux/files/home/code/FileRenamer/app/src/main/res/values-night/styles.xml",
+                    "from": {
+                        "startLines": "2",
+                        "startColumns": "4",
+                        "startOffsets": "55",
+                        "endLines": "6",
+                        "endColumns": "12",
+                        "endOffsets": "390"
+                    }
+                }
+            ]
+        },
+        {
+            "outputFile": "/data/data/com.termux/files/home/.gradle/daemon/9.6.1/com.filerenamer.app-mergeReleaseResources-45:/values-night-v8/values-night-v8.xml",
+            "map": [
+                {
+                    "source": "/data/data/com.termux/files/home/code/FileRenamer/app/src/main/res/values-night/styles.xml",
+                    "from": {
+                        "startLines": "2",
+                        "startColumns": "4",
+                        "startOffsets": "55",
+                        "endLines": "7",
+                        "endColumns": "12",
+                        "endOffsets": "453"
+                    }
+                }
+            ]
+        }
+    ]
+}
