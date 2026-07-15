@@ -200,11 +200,7 @@ fun MainScreen(
 /**
  * 可拖拽排序的文件列表 - 使用 sh.calvin.reorderable 库
  *
- * 支持：
- * - 长按拖拽排序
- * - 连续跨位拖动
- * - 边缘自动滚动
- * - 不同大小的 item
+ * 长按任意位置即可拖动排序，库自动处理连续跨位拖动和边缘自动滚动。
  */
 @Composable
 private fun DraggableFileList(
@@ -261,16 +257,9 @@ private fun DraggableFileList(
                 reorderableLazyListState,
                 key = file.uri.toString(),
             ) { isDragging ->
-                val elevation by animateDpAsState(if (isDragging) 8.dp else 0.dp, label = "elevation")
-
                 Box(
                     modifier = Modifier
-                        .zIndex(if (isDragging) 1f else 0f)
-                        .graphicsLayer {
-                            scaleX = if (isDragging) 1.05f else 1f
-                            scaleY = if (isDragging) 1.05f else 1f
-                            shadowElevation = if (isDragging) 10f else 0f
-                        }
+                        .padding(horizontal = 12.dp, vertical = 3.dp)
                         .draggableHandle()
                 ) {
                     FileItemCard(
