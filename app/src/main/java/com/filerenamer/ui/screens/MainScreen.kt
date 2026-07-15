@@ -3,7 +3,6 @@ package com.filerenamer.ui.screens
 import androidx.compose.animation.*
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -21,7 +20,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -30,8 +28,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import com.filerenamer.data.RenameType
 import com.filerenamer.ui.components.*
-import kotlinx.coroutines.delay
-import kotlin.math.roundToInt
+import sh.calvin.reorderable.*
 
 @Composable
 fun MainScreen(
@@ -201,16 +198,13 @@ fun MainScreen(
 }
 
 /**
- * 可拖拽排序的文件列表
+ * 可拖拽排序的文件列表 - 使用 sh.calvin.reorderable 库
  *
- * 每个 item 上设置 pointerInput，使用 rememberUpdatedState 确保回调中拿到最新引用。
- *
- * 关键设计：
- * 1. 交换阈值设为 itemHeight * 0.6（而非完整 itemHeight），让交换更灵敏
- * 2. 交换后 dragOffset 保留余量（减去/加上 itemHeight），而不是置零
- *    这样如果用户快速拖动，余量可以累积到下一次交换
- * 3. 使用 while 循环支持单帧内多次交换（当用户拖得极快时）
- * 4. 通过 listState.layoutInfo 实时计算位置，不受重组影响
+ * 支持：
+ * - 长按拖拽排序
+ * - 连续跨位拖动
+ * - 边缘自动滚动
+ * - 不同大小的 item
  */
 @Composable
 private fun DraggableFileList(
@@ -243,34 +237,13 @@ private fun DraggableFileList(
         return
     }
 
-    val listState = rememberLazyListState()
-    val density = LocalDensity.current
-
-    // 用 rememberUpdatedState 持有最新引用
-    val currentFiles by rememberUpdatedState(files)
-    val currentOnReorder by rememberUpdatedState(onReorder)
-
-    // 拖拽状态
-    var draggedIndex by remember { mutableIntStateOf(-1) }
-    var dragOffset by remember { mutableFloatStateOf(0f) }
-
-    // 自动滚动控制
-    var isAutoScrolling by remember { mutableStateOf(false) }
-    var scrollDirection by remember { mutableIntStateOf(0) }
-
-    // 自动滚动协程
-    LaunchedEffect(Unit) {
-        while (true) {
-            if (isAutoScrolling && draggedIndex >= 0 && scrollDirection != 0) {
-                val scrollPx = scrollDirection * 12
-                listState.dispatchRawDelta(scrollPx.toFloat())
-            }
-            delay(16)
-        }
+    val lazyListState = rememberLazyListState()
+    val reorderableLazyListState = rememberReorderableLazyListState(lazyListState) { from, to ->
+        onReorder(from.index, to.index)
     }
 
     LazyColumn(
-        state = listState,
+        state = lazyListState,
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(vertical = 8.dp),
     ) {
@@ -284,125 +257,33 @@ private fun DraggableFileList(
         }
 
         itemsIndexed(files, key = { _, file -> file.uri.toString() }) { index, file ->
-            val isDragging = draggedIndex == index
+            ReorderableItem(
+                reorderableLazyListState,
+                key = file.uri.toString(),
+            ) { isDragging ->
+                val elevation by animateDpAsState(if (isDragging) 8.dp else 0.dp, label = "elevation")
 
-            val offsetY by animateDpAsState(
-                targetValue = if (isDragging) with(density) { dragOffset.toDp() } else 0.dp,
-                label = "offsetY"
-            )
-
-            Box(
-                modifier = Modifier
-                    .zIndex(if (isDragging) 1f else 0f)
-                    .graphicsLayer {
-                        translationY = offsetY.toPx()
-                        scaleX = if (isDragging) 1.05f else 1f
-                        scaleY = if (isDragging) 1.05f else 1f
-                        shadowElevation = if (isDragging) 10f else 0f
-                    }
-                    .pointerInput(index) {
-                        detectDragGesturesAfterLongPress(
-                            onDragStart = {
-                                draggedIndex = index
-                                dragOffset = 0f
-                                isAutoScrolling = false
-                                scrollDirection = 0
-                            },
-                            onDrag = { change, dragAmount ->
-                                change.consume()
-                                if (draggedIndex < 0) return@detectDragGesturesAfterLongPress
-
-                                dragOffset += dragAmount.y
-
-                                // 通过 layoutInfo 实时计算当前拖拽位置
-                                val layoutInfo = listState.layoutInfo
-                                val currentItem = layoutInfo.visibleItemsInfo.find { it.index == draggedIndex }
-
-                                if (currentItem != null) {
-                                    val itemHeight = currentItem.size
-
-                                    // === 交换逻辑 ===
-                                    // 阈值设为 0.6 倍 itemHeight，让交换更灵敏
-                                    // 使用 while 循环支持单帧内多次交换
-                                    if (itemHeight > 0) {
-                                        val threshold = itemHeight * 0.6f
-
-                                        while (dragOffset > threshold) {
-                                            val targetIdx = draggedIndex + 1
-                                            if (targetIdx < currentFiles.size) {
-                                                currentOnReorder(draggedIndex, targetIdx)
-                                                draggedIndex = targetIdx
-                                                dragOffset -= itemHeight
-                                            } else {
-                                                dragOffset = threshold // 限制最大偏移
-                                                break
-                                            }
-                                        }
-                                        while (dragOffset < -threshold) {
-                                            val targetIdx = draggedIndex - 1
-                                            if (targetIdx >= 0) {
-                                                currentOnReorder(draggedIndex, targetIdx)
-                                                draggedIndex = targetIdx
-                                                dragOffset += itemHeight
-                                            } else {
-                                                dragOffset = -threshold
-                                                break
-                                            }
-                                        }
-                                    }
-
-                                    // === 边缘自动滚动 ===
-                                    val viewportHeight = layoutInfo.viewportEndOffset
-                                    val edgeThreshold = with(density) { 100.dp.toPx() }
-
-                                    val fingerGlobalY = currentItem.offset + (currentItem.size / 2f) + dragOffset
-
-                                    val shouldScrollUp = fingerGlobalY < edgeThreshold &&
-                                            layoutInfo.visibleItemsInfo.firstOrNull()?.index != 0
-                                    val shouldScrollDown = fingerGlobalY > viewportHeight - edgeThreshold &&
-                                            layoutInfo.visibleItemsInfo.lastOrNull()?.let { it.index + 1 } != layoutInfo.totalItemsCount
-
-                                    if (shouldScrollUp) {
-                                        if (!isAutoScrolling || scrollDirection != -1) {
-                                            isAutoScrolling = true
-                                            scrollDirection = -1
-                                        }
-                                    } else if (shouldScrollDown) {
-                                        if (!isAutoScrolling || scrollDirection != 1) {
-                                            isAutoScrolling = true
-                                            scrollDirection = 1
-                                        }
-                                    } else {
-                                        isAutoScrolling = false
-                                        scrollDirection = 0
-                                    }
-                                }
-                            },
-                            onDragEnd = {
-                                draggedIndex = -1
-                                dragOffset = 0f
-                                isAutoScrolling = false
-                                scrollDirection = 0
-                            },
-                            onDragCancel = {
-                                draggedIndex = -1
-                                dragOffset = 0f
-                                isAutoScrolling = false
-                                scrollDirection = 0
-                            }
-                        )
-                    }
-            ) {
-                FileItemCard(
-                    fileItem = file,
-                    onToggle = { onToggleFile(file) },
-                    onDoubleClick = {
-                        if (file.isDirectory) {
-                            onEnterDirectory(file)
+                Box(
+                    modifier = Modifier
+                        .zIndex(if (isDragging) 1f else 0f)
+                        .graphicsLayer {
+                            scaleX = if (isDragging) 1.05f else 1f
+                            scaleY = if (isDragging) 1.05f else 1f
+                            shadowElevation = if (isDragging) 10f else 0f
                         }
-                    },
-                    accentColor = accentColor,
-                )
+                        .draggableHandle()
+                ) {
+                    FileItemCard(
+                        fileItem = file,
+                        onToggle = { onToggleFile(file) },
+                        onDoubleClick = {
+                            if (file.isDirectory) {
+                                onEnterDirectory(file)
+                            }
+                        },
+                        accentColor = accentColor,
+                    )
+                }
             }
         }
 
