@@ -10,9 +10,6 @@ import com.filerenamer.data.RenameType
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
-/**
- * 重命名结果
- */
 data class RenameResult(
     val successCount: Int,
     val failCount: Int,
@@ -25,8 +22,6 @@ object FileUtils {
     /**
      * 列出目录下的文件和文件夹（仅当前层级）
      * 在 IO 线程执行
-     *
-     * 优化：使用批量查询减少 DocumentFile 调用次数
      */
     suspend fun listDirectory(context: Context, uri: Uri): List<FileItem> = withContext(Dispatchers.IO) {
         val items = mutableListOf<FileItem>()
@@ -34,8 +29,6 @@ object FileUtils {
             val documentFile = DocumentFile.fromTreeUri(context, uri)
             if (documentFile != null && documentFile.exists() && documentFile.isDirectory) {
                 val children = documentFile.listFiles()
-                // 预分配容量
-                // items.ensureCapacity(children.size) - not available in Kotlin
                 for (child in children) {
                     val name = child.name ?: "未知"
                     items.add(
@@ -54,15 +47,11 @@ object FileUtils {
         } catch (e: Exception) {
             Log.e(TAG, "Error listing directory: $uri", e)
         }
-        // 按名称排序：目录在前，文件在后
         items.sortedWith(compareBy({ !it.isDirectory }, { it.name.lowercase() }))
     }
 
     /**
      * 批量重命名 - 在 IO 线程执行
-     * 使用父目录的 DocumentFile 来操作子文件
-     *
-     * @param onProgress 进度回调，参数为 (当前处理序号, 总数)
      */
     suspend fun batchRename(
         context: Context,
@@ -75,13 +64,11 @@ object FileUtils {
         var failCount = 0
         val failReasons = mutableListOf<String>()
 
-        // 获取父目录 DocumentFile
         val parentDir = DocumentFile.fromTreeUri(context, parentUri)
         if (parentDir == null || !parentDir.exists()) {
             return@withContext RenameResult(0, items.size, listOf("无法访问父目录"))
         }
 
-        // 计算 id 号的补零位数
         val idPadLen = when {
             items.size < 10 -> 1
             items.size < 100 -> 2
@@ -93,381 +80,153 @@ object FileUtils {
         val total = items.size
 
         for ((index, item) in items.withIndex()) {
-            // 报告进度
             onProgress?.invoke(index + 1, total)
-
             try {
-                // 通过父目录查找文件
                 val file = parentDir.findFile(item.name)
                 if (file == null || !file.exists()) {
-                    val reason = "「${item.name}」找不到该文件"
-                    Log.e(TAG, reason)
-                    failCount++
-                    failReasons.add(reason)
-                    continue
+                    failCount++; failReasons.add("「${item.name}」找不到该文件"); continue
                 }
-
-                // id 号从 1 开始
                 val id = index + 1
                 val idStr = id.toString().padStart(idPadLen, '0')
-
                 val newNameResult = computeNewName(item.name, file.isDirectory, operation, idStr)
-                if (newNameResult == null) {
-                    val reason = "「${item.name}」参数错误，无法计算新文件名"
-                    failCount++
-                    failReasons.add(reason)
-                    continue
-                }
-                if (!newNameResult.isSuccess) {
-                    val reason = "「${item.name}」${newNameResult.errorMsg}"
-                    failCount++
-                    failReasons.add(reason)
-                    continue
-                }
+                if (newNameResult == null) { failCount++; failReasons.add("「${item.name}」参数错误"); continue }
+                if (!newNameResult.isSuccess) { failCount++; failReasons.add("「${item.name}」${newNameResult.errorMsg}"); continue }
                 val newName = newNameResult.name
-                if (newName == item.name) {
-                    val reason = "「${item.name}」新文件名与原名相同，无需修改"
-                    failCount++
-                    failReasons.add(reason)
-                    continue
-                }
-
-                val result = file.renameTo(newName)
-                if (result) {
-                    successCount++
-                } else {
-                    val reason = "「${item.name}」重命名失败（可能权限不足或文件名冲突）"
-                    failCount++
-                    failReasons.add(reason)
-                }
+                if (newName == item.name) { failCount++; failReasons.add("「${item.name}」新文件名与原名相同"); continue }
+                if (file.renameTo(newName)) successCount++
+                else { failCount++; failReasons.add("「${item.name}」重命名失败") }
             } catch (e: Exception) {
-                val reason = "「${item.name}」${e.message ?: "未知错误"}"
-                Log.e(TAG, "Error renaming ${item.name}", e)
-                failCount++
-                failReasons.add(reason)
+                failCount++; failReasons.add("「${item.name}」${e.message ?: "未知错误"}")
             }
         }
-
         RenameResult(successCount, failCount, failReasons)
     }
 
-    /**
-     * 计算新文件名结果
-     */
-    private data class NewNameResult(
-        val name: String,
-        val isSuccess: Boolean = true,
-        val errorMsg: String = ""
-    )
+    private data class NewNameResult(val name: String, val isSuccess: Boolean = true, val errorMsg: String = "")
 
-    /**
-     * 计算新文件名
-     */
+    /** 将文件名拆分为主名和扩展名 */
+    private fun splitName(name: String, isDirectory: Boolean): Pair<String, String> {
+        if (isDirectory) return Pair(name, "")
+        val dotIndex = name.lastIndexOf('.')
+        return if (dotIndex > 0) Pair(name.substring(0, dotIndex), name.substring(dotIndex)) else Pair(name, "")
+    }
+
     private fun computeNewName(
-        currentName: String,
-        isDirectory: Boolean,
-        operation: RenameOperation,
-        idStr: String = ""
+        currentName: String, isDirectory: Boolean, operation: RenameOperation, idStr: String = ""
     ): NewNameResult? {
         return when (operation.type) {
-            RenameType.ADD_PREFIX -> {
-                NewNameResult("${operation.text}$currentName")
-            }
-            RenameType.ADD_SUFFIX -> {
-                val dotIndex = currentName.lastIndexOf('.')
-                if (dotIndex > 0 && !isDirectory) {
-                    val baseName = currentName.substring(0, dotIndex)
-                    val extension = currentName.substring(dotIndex)
-                    NewNameResult("$baseName${operation.text}$extension")
-                } else {
-                    NewNameResult("$currentName${operation.text}")
-                }
-            }
-            RenameType.REMOVE_FIRST_N -> {
-                val count = operation.charCount
-                if (count <= 0) return null
-                if (count >= currentName.length) {
-                    return NewNameResult("", false, "文件名总长度(${currentName.length}) ≤ 要删除的字符数($count)，无法删除")
-                }
+        RenameType.ADD_PREFIX -> NewNameResult("${operation.text}$currentName")
 
-                if (isDirectory) {
-                    NewNameResult(currentName.substring(count))
-                } else {
-                    val dotIndex = currentName.lastIndexOf('.')
-                    if (dotIndex > 0) {
-                        val baseName = currentName.substring(0, dotIndex)
-                        val extension = currentName.substring(dotIndex)
-                        if (count >= baseName.length) {
-                            return NewNameResult("", false, "文件名主名长度(${baseName.length}) ≤ 要删除的字符数($count)，无法删除")
-                        }
-                        NewNameResult("${baseName.substring(count)}$extension")
-                    } else {
-                        NewNameResult(currentName.substring(count))
-                    }
-                }
-            }
-            RenameType.REMOVE_LAST_N -> {
-                val count = operation.charCount
-                if (count <= 0) return null
-                if (count >= currentName.length) {
-                    return NewNameResult("", false, "文件名总长度(${currentName.length}) ≤ 要删除的字符数($count)，无法删除")
-                }
+        RenameType.ADD_SUFFIX -> {
+            val (base, ext) = splitName(currentName, isDirectory)
+            NewNameResult("$base${operation.text}$ext")
+        }
 
-                if (isDirectory) {
-                    NewNameResult(currentName.substring(0, currentName.length - count))
-                } else {
-                    val dotIndex = currentName.lastIndexOf('.')
-                    if (dotIndex > 0) {
-                        val baseName = currentName.substring(0, dotIndex)
-                        val extension = currentName.substring(dotIndex)
-                        if (count >= baseName.length) {
-                            return NewNameResult("", false, "文件名主名长度(${baseName.length}) ≤ 要删除的字符数($count)，无法删除")
-                        }
-                        NewNameResult("${baseName.substring(0, baseName.length - count)}$extension")
-                    } else {
-                        NewNameResult(currentName.substring(0, currentName.length - count))
-                    }
-                }
-            }
-            RenameType.REPLACE_FIRST_N -> {
-                val count = operation.charCount
-                val replacement = operation.text
-                if (count <= 0) return null
-                if (count >= currentName.length) {
-                    return NewNameResult("", false, "文件名总长度(${currentName.length}) ≤ 要替换的字符数($count)，无法替换")
-                }
+        RenameType.REMOVE_FIRST_N -> {
+            val count = operation.charCount
+            if (count <= 0) return null
+            val (base, ext) = splitName(currentName, isDirectory)
+            if (count >= base.length) return NewNameResult("", false, "文件名主名长度(${base.length}) ≤ 要删除的字符数($count)")
+            NewNameResult("${base.substring(count)}$ext")
+        }
 
-                if (isDirectory) {
-                    NewNameResult("$replacement${currentName.substring(count)}")
-                } else {
-                    val dotIndex = currentName.lastIndexOf('.')
-                    if (dotIndex > 0) {
-                        val baseName = currentName.substring(0, dotIndex)
-                        val extension = currentName.substring(dotIndex)
-                        if (count >= baseName.length) {
-                            return NewNameResult("", false, "文件名主名长度(${baseName.length}) ≤ 要替换的字符数($count)，无法替换")
-                        }
-                        NewNameResult("$replacement${baseName.substring(count)}$extension")
-                    } else {
-                        NewNameResult("$replacement${currentName.substring(count)}")
-                    }
-                }
-            }
-            RenameType.REPLACE_LAST_N -> {
-                val count = operation.charCount
-                val replacement = operation.text
-                if (count <= 0) return null
-                if (count >= currentName.length) {
-                    return NewNameResult("", false, "文件名总长度(${currentName.length}) ≤ 要替换的字符数($count)，无法替换")
-                }
+        RenameType.REMOVE_LAST_N -> {
+            val count = operation.charCount
+            if (count <= 0) return null
+            val (base, ext) = splitName(currentName, isDirectory)
+            if (count >= base.length) return NewNameResult("", false, "文件名主名长度(${base.length}) ≤ 要删除的字符数($count)")
+            NewNameResult("${base.substring(0, base.length - count)}$ext")
+        }
 
-                if (isDirectory) {
-                    NewNameResult("${currentName.substring(0, currentName.length - count)}$replacement")
-                } else {
-                    val dotIndex = currentName.lastIndexOf('.')
-                    if (dotIndex > 0) {
-                        val baseName = currentName.substring(0, dotIndex)
-                        val extension = currentName.substring(dotIndex)
-                        if (count >= baseName.length) {
-                            return NewNameResult("", false, "文件名主名长度(${baseName.length}) ≤ 要替换的字符数($count)，无法替换")
-                        }
-                        NewNameResult("${baseName.substring(0, baseName.length - count)}$replacement$extension")
-                    } else {
-                        NewNameResult("${currentName.substring(0, currentName.length - count)}$replacement")
-                    }
-                }
-            }
+        RenameType.REPLACE_FIRST_N -> {
+            val count = operation.charCount; val replacement = operation.text
+            if (count <= 0) return null
+            val (base, ext) = splitName(currentName, isDirectory)
+            if (count >= base.length) return NewNameResult("", false, "文件名主名长度(${base.length}) ≤ 要替换的字符数($count)")
+            NewNameResult("$replacement${base.substring(count)}$ext")
+        }
 
-            RenameType.INSERT_AT_N_FROM_START -> {
-                val pos = operation.position
-                val insertText = operation.text
-                if (pos < 0) return NewNameResult("", false, "插入位置($pos)不能为负数")
-                if (insertText.isEmpty()) return NewNameResult("", false, "插入文本不能为空")
+        RenameType.REPLACE_LAST_N -> {
+            val count = operation.charCount; val replacement = operation.text
+            if (count <= 0) return null
+            val (base, ext) = splitName(currentName, isDirectory)
+            if (count >= base.length) return NewNameResult("", false, "文件名主名长度(${base.length}) ≤ 要替换的字符数($count)")
+            NewNameResult("${base.substring(0, base.length - count)}$replacement$ext")
+        }
 
-                if (isDirectory) {
-                    if (pos > currentName.length) return NewNameResult("", false, "插入位置($pos)超出文件名长度(${currentName.length})")
-                    NewNameResult("${currentName.substring(0, pos)}$insertText${currentName.substring(pos)}")
-                } else {
-                    val dotIndex = currentName.lastIndexOf('.')
-                    if (dotIndex > 0) {
-                        val baseName = currentName.substring(0, dotIndex)
-                        val extension = currentName.substring(dotIndex)
-                        if (pos > baseName.length) return NewNameResult("", false, "插入位置($pos)超出文件名主名长度(${baseName.length})")
-                        NewNameResult("${baseName.substring(0, pos)}$insertText${baseName.substring(pos)}$extension")
-                    } else {
-                        if (pos > currentName.length) return NewNameResult("", false, "插入位置($pos)超出文件名长度(${currentName.length})")
-                        NewNameResult("${currentName.substring(0, pos)}$insertText${currentName.substring(pos)}")
-                    }
-                }
-            }
-            RenameType.DELETE_AT_N_FROM_START -> {
-                val pos = operation.position
-                val count = operation.charCount
-                if (pos < 0) return NewNameResult("", false, "删除起始位置($pos)不能为负数")
-                if (count <= 0) return NewNameResult("", false, "删除字符数($count)必须大于0")
+        RenameType.INSERT_AT_N_FROM_START -> {
+            val pos = operation.position; val insertText = operation.text
+            if (pos < 0) return NewNameResult("", false, "插入位置不能为负数")
+            if (insertText.isEmpty()) return NewNameResult("", false, "插入文本不能为空")
+            val (base, ext) = splitName(currentName, isDirectory)
+            if (pos > base.length) return NewNameResult("", false, "插入位置($pos)超出文件名主名长度(${base.length})")
+            NewNameResult("${base.substring(0, pos)}$insertText${base.substring(pos)}$ext")
+        }
 
-                if (isDirectory) {
-                    if (pos + count > currentName.length) return NewNameResult("", false, "从位置${pos}删除${count}个字符超出文件名长度(${currentName.length})")
-                    NewNameResult("${currentName.substring(0, pos)}${currentName.substring(pos + count)}")
-                } else {
-                    val dotIndex = currentName.lastIndexOf('.')
-                    if (dotIndex > 0) {
-                        val baseName = currentName.substring(0, dotIndex)
-                        val extension = currentName.substring(dotIndex)
-                        if (pos + count > baseName.length) return NewNameResult("", false, "从位置${pos}删除${count}个字符超出文件名主名长度(${baseName.length})")
-                        NewNameResult("${baseName.substring(0, pos)}${baseName.substring(pos + count)}$extension")
-                    } else {
-                        if (pos + count > currentName.length) return NewNameResult("", false, "从位置${pos}删除${count}个字符超出文件名长度(${currentName.length})")
-                        NewNameResult("${currentName.substring(0, pos)}${currentName.substring(pos + count)}")
-                    }
-                }
-            }
-            RenameType.INSERT_AT_N_FROM_END -> {
-                val pos = operation.position
-                val insertText = operation.text
-                if (pos < 0) return NewNameResult("", false, "插入位置($pos)不能为负数")
-                if (insertText.isEmpty()) return NewNameResult("", false, "插入文本不能为空")
+        RenameType.DELETE_AT_N_FROM_START -> {
+            val pos = operation.position; val count = operation.charCount
+            if (pos < 0) return NewNameResult("", false, "删除起始位置不能为负数")
+            if (count <= 0) return NewNameResult("", false, "删除字符数必须大于0")
+            val (base, ext) = splitName(currentName, isDirectory)
+            if (pos + count > base.length) return NewNameResult("", false, "从位置${pos}删除${count}个字符超出文件名主名长度(${base.length})")
+            NewNameResult("${base.substring(0, pos)}${base.substring(pos + count)}$ext")
+        }
 
-                if (isDirectory) {
-                    if (pos > currentName.length) return NewNameResult("", false, "从后往前第${pos}位超出文件名长度(${currentName.length})")
-                    val insertIndex = currentName.length - pos
-                    NewNameResult("${currentName.substring(0, insertIndex)}$insertText${currentName.substring(insertIndex)}")
-                } else {
-                    val dotIndex = currentName.lastIndexOf('.')
-                    if (dotIndex > 0) {
-                        val baseName = currentName.substring(0, dotIndex)
-                        val extension = currentName.substring(dotIndex)
-                        if (pos > baseName.length) return NewNameResult("", false, "从后往前第${pos}位超出文件名主名长度(${baseName.length})")
-                        val baseInsertIndex = baseName.length - pos
-                        NewNameResult("${baseName.substring(0, baseInsertIndex)}$insertText${baseName.substring(baseInsertIndex)}$extension")
-                    } else {
-                        if (pos > currentName.length) return NewNameResult("", false, "从后往前第${pos}位超出文件名长度(${currentName.length})")
-                        val insertIndex = currentName.length - pos
-                        NewNameResult("${currentName.substring(0, insertIndex)}$insertText${currentName.substring(insertIndex)}")
-                    }
-                }
-            }
-            RenameType.DELETE_AT_N_FROM_END -> {
-                val pos = operation.position
-                val count = operation.charCount
-                if (pos < 0) return NewNameResult("", false, "删除位置($pos)不能为负数")
-                if (count <= 0) return NewNameResult("", false, "删除字符数($count)必须大于0")
+        RenameType.INSERT_AT_N_FROM_END -> {
+            val pos = operation.position; val insertText = operation.text
+            if (pos < 0) return NewNameResult("", false, "插入位置不能为负数")
+            if (insertText.isEmpty()) return NewNameResult("", false, "插入文本不能为空")
+            val (base, ext) = splitName(currentName, isDirectory)
+            if (pos > base.length) return NewNameResult("", false, "从后往前第${pos}位超出文件名主名长度(${base.length})")
+            val insertIndex = base.length - pos
+            NewNameResult("${base.substring(0, insertIndex)}$insertText${base.substring(insertIndex)}$ext")
+        }
 
-                if (isDirectory) {
-                    val deleteStart = currentName.length - pos - count
-                    if (deleteStart < 0 || deleteStart + count > currentName.length) return NewNameResult("", false, "从后往前第${pos}位删除${count}个字符超出文件名长度(${currentName.length})")
-                    NewNameResult("${currentName.substring(0, deleteStart)}${currentName.substring(deleteStart + count)}")
-                } else {
-                    val dotIndex = currentName.lastIndexOf('.')
-                    if (dotIndex > 0) {
-                        val baseName = currentName.substring(0, dotIndex)
-                        val extension = currentName.substring(dotIndex)
-                        val deleteStart = baseName.length - pos - count
-                        if (deleteStart < 0 || deleteStart + count > baseName.length) return NewNameResult("", false, "从后往前第${pos}位删除${count}个字符超出文件名主名长度(${baseName.length})")
-                        NewNameResult("${baseName.substring(0, deleteStart)}${baseName.substring(deleteStart + count)}$extension")
-                    } else {
-                        val deleteStart = currentName.length - pos - count
-                        if (deleteStart < 0 || deleteStart + count > currentName.length) return NewNameResult("", false, "从后往前第${pos}位删除${count}个字符超出文件名长度(${currentName.length})")
-                        NewNameResult("${currentName.substring(0, deleteStart)}${currentName.substring(deleteStart + count)}")
-                    }
-                }
-            }
+        RenameType.DELETE_AT_N_FROM_END -> {
+            val pos = operation.position; val count = operation.charCount
+            if (pos < 0) return NewNameResult("", false, "删除位置不能为负数")
+            if (count <= 0) return NewNameResult("", false, "删除字符数必须大于0")
+            val (base, ext) = splitName(currentName, isDirectory)
+            val deleteStart = base.length - pos - count
+            if (deleteStart < 0 || deleteStart + count > base.length) return NewNameResult("", false, "从后往前第${pos}位删除${count}个字符超出文件名主名长度(${base.length})")
+            NewNameResult("${base.substring(0, deleteStart)}${base.substring(deleteStart + count)}$ext")
+        }
 
-            RenameType.ADD_ID_PREFIX -> {
-                if (isDirectory) {
-                    NewNameResult("${idStr}_$currentName")
-                } else {
-                    val dotIndex = currentName.lastIndexOf('.')
-                    if (dotIndex > 0) {
-                        val baseName = currentName.substring(0, dotIndex)
-                        val extension = currentName.substring(dotIndex)
-                        NewNameResult("${idStr}_$baseName$extension")
-                    } else {
-                        NewNameResult("${idStr}_$currentName")
-                    }
-                }
-            }
-            RenameType.ADD_ID_SUFFIX -> {
-                if (isDirectory) {
-                    NewNameResult("${currentName}_$idStr")
-                } else {
-                    val dotIndex = currentName.lastIndexOf('.')
-                    if (dotIndex > 0) {
-                        val baseName = currentName.substring(0, dotIndex)
-                        val extension = currentName.substring(dotIndex)
-                        NewNameResult("${baseName}_$idStr$extension")
-                    } else {
-                        NewNameResult("${currentName}_$idStr")
-                    }
-                }
-            }
-            // ===== 新增：从前往后第n位开始替换m个字符 =====
-            RenameType.REPLACE_AT_N_FROM_START -> {
-                val pos = operation.position
-                val count = operation.charCount
-                val replacement = operation.text
-                if (pos < 0) return NewNameResult("", false, "替换起始位置($pos)不能为负数")
-                if (count <= 0) return NewNameResult("", false, "替换字符数($count)必须大于0")
+        RenameType.ADD_ID_PREFIX -> {
+            val (base, ext) = splitName(currentName, isDirectory)
+            NewNameResult("${idStr}_$base$ext")
+        }
 
-                if (isDirectory) {
-                    if (pos + count > currentName.length) return NewNameResult("", false, "从位置${pos}替换${count}个字符超出文件名长度(${currentName.length})")
-                    NewNameResult("${currentName.substring(0, pos)}$replacement${currentName.substring(pos + count)}")
-                } else {
-                    val dotIndex = currentName.lastIndexOf('.')
-                    if (dotIndex > 0) {
-                        val baseName = currentName.substring(0, dotIndex)
-                        val extension = currentName.substring(dotIndex)
-                        if (pos + count > baseName.length) return NewNameResult("", false, "从位置${pos}替换${count}个字符超出文件名主名长度(${baseName.length})")
-                        NewNameResult("${baseName.substring(0, pos)}$replacement${baseName.substring(pos + count)}$extension")
-                    } else {
-                        if (pos + count > currentName.length) return NewNameResult("", false, "从位置${pos}替换${count}个字符超出文件名长度(${currentName.length})")
-                        NewNameResult("${currentName.substring(0, pos)}$replacement${currentName.substring(pos + count)}")
-                    }
-                }
-            }
-            // ===== 新增：从后往前第n位开始替换m个字符 =====
-            RenameType.REPLACE_AT_N_FROM_END -> {
-                val pos = operation.position
-                val count = operation.charCount
-                val replacement = operation.text
-                if (pos < 0) return NewNameResult("", false, "替换位置($pos)不能为负数")
-                if (count <= 0) return NewNameResult("", false, "替换字符数($count)必须大于0")
+        RenameType.ADD_ID_SUFFIX -> {
+            val (base, ext) = splitName(currentName, isDirectory)
+            NewNameResult("${base}_$idStr$ext")
+        }
 
-                if (isDirectory) {
-                    val replaceStart = currentName.length - pos - count
-                    if (replaceStart < 0 || replaceStart + count > currentName.length) return NewNameResult("", false, "从后往前第${pos}位替换${count}个字符超出文件名长度(${currentName.length})")
-                    NewNameResult("${currentName.substring(0, replaceStart)}$replacement${currentName.substring(replaceStart + count)}")
-                } else {
-                    val dotIndex = currentName.lastIndexOf('.')
-                    if (dotIndex > 0) {
-                        val baseName = currentName.substring(0, dotIndex)
-                        val extension = currentName.substring(dotIndex)
-                        val replaceStart = baseName.length - pos - count
-                        if (replaceStart < 0 || replaceStart + count > baseName.length) return NewNameResult("", false, "从后往前第${pos}位替换${count}个字符超出文件名主名长度(${baseName.length})")
-                        NewNameResult("${baseName.substring(0, replaceStart)}$replacement${baseName.substring(replaceStart + count)}$extension")
-                    } else {
-                        val replaceStart = currentName.length - pos - count
-                        if (replaceStart < 0 || replaceStart + count > currentName.length) return NewNameResult("", false, "从后往前第${pos}位替换${count}个字符超出文件名长度(${currentName.length})")
-                        NewNameResult("${currentName.substring(0, replaceStart)}$replacement${currentName.substring(replaceStart + count)}")
-                    }
-                }
-            }
-            // ===== 新增：替换文件名中的空格为指定字符串 =====
-            RenameType.REPLACE_SPACE -> {
-                val replacement = operation.text
-                if (isDirectory) {
-                    NewNameResult(currentName.replace(" ", replacement))
-                } else {
-                    val dotIndex = currentName.lastIndexOf('.')
-                    if (dotIndex > 0) {
-                        val baseName = currentName.substring(0, dotIndex)
-                        val extension = currentName.substring(dotIndex)
-                        NewNameResult("${baseName.replace(" ", replacement)}$extension")
-                    } else {
-                        NewNameResult(currentName.replace(" ", replacement))
-                    }
-                }
-            }
+        RenameType.REPLACE_AT_N_FROM_START -> {
+            val pos = operation.position; val count = operation.charCount; val replacement = operation.text
+            if (pos < 0) return NewNameResult("", false, "替换起始位置不能为负数")
+            if (count <= 0) return NewNameResult("", false, "替换字符数必须大于0")
+            val (base, ext) = splitName(currentName, isDirectory)
+            if (pos + count > base.length) return NewNameResult("", false, "从位置${pos}替换${count}个字符超出文件名主名长度(${base.length})")
+            NewNameResult("${base.substring(0, pos)}$replacement${base.substring(pos + count)}$ext")
+        }
+
+        RenameType.REPLACE_AT_N_FROM_END -> {
+            val pos = operation.position; val count = operation.charCount; val replacement = operation.text
+            if (pos < 0) return NewNameResult("", false, "替换位置不能为负数")
+            if (count <= 0) return NewNameResult("", false, "替换字符数必须大于0")
+            val (base, ext) = splitName(currentName, isDirectory)
+            val replaceStart = base.length - pos - count
+            if (replaceStart < 0 || replaceStart + count > base.length) return NewNameResult("", false, "从后往前第${pos}位替换${count}个字符超出文件名主名长度(${base.length})")
+            NewNameResult("${base.substring(0, replaceStart)}$replacement${base.substring(replaceStart + count)}$ext")
+        }
+
+        RenameType.REPLACE_SPACE -> {
+            val replacement = operation.text
+            val (base, ext) = splitName(currentName, isDirectory)
+            NewNameResult("${base.replace(" ", replacement)}$ext")
         }
     }
+
+}
 }
