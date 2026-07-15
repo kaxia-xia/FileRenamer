@@ -145,8 +145,10 @@ fun MainScreen(
 /**
  * 可拖拽排序的文件列表 - 使用 sh.calvin.reorderable 库
  *
- * 每个 item 右侧有一个拖拽手柄图标，长按手柄即可拖动排序。
+ * 每个 item 左侧有一个拖拽手柄图标，长按手柄即可拖动排序。
  * 点击 item 其他区域触发勾选/取消勾选。
+ *
+ * 注意：LazyColumn 中标题 item 占 index 0，所以文件 item 的 index 需要减 1。
  */
 @Composable
 private fun DraggableFileList(
@@ -171,7 +173,13 @@ private fun DraggableFileList(
 
     val lazyListState = rememberLazyListState()
     val reorderableLazyListState = rememberReorderableLazyListState(lazyListState) { from, to ->
-        onReorder(from.index, to.index)
+        // from.index 和 to.index 是 LazyColumn 中的 index（包含标题 item 0）
+        // 文件列表的 index 需要减 1
+        val fromFileIdx = from.index - 1
+        val toFileIdx = to.index - 1
+        if (fromFileIdx >= 0 && toFileIdx >= 0 && fromFileIdx < files.size && toFileIdx < files.size) {
+            onReorder(fromFileIdx, toFileIdx)
+        }
     }
 
     LazyColumn(
@@ -193,10 +201,6 @@ private fun DraggableFileList(
                 reorderableLazyListState,
                 key = file.uri.toString(),
             ) { isDragging ->
-                val elevation by animateDpAsState(
-                    if (isDragging) 8.dp else 0.dp, label = "elevation"
-                )
-
                 Box(
                     modifier = Modifier
                         .padding(horizontal = 12.dp, vertical = 3.dp)
