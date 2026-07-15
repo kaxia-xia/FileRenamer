@@ -18,19 +18,21 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import com.filerenamer.data.RenameType
 import com.filerenamer.ui.components.*
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
 @Composable
@@ -201,7 +203,7 @@ fun MainScreen(
 }
 
 /**
- * 可拖拽排序的文件列表
+ * 可拖拽排序的文件列表 - 支持边缘自动滚动
  */
 @Composable
 private fun DraggableFileList(
@@ -234,13 +236,28 @@ private fun DraggableFileList(
         return
     }
 
-    // 拖拽状态
-    var draggedItemIndex by remember { mutableStateOf(-1) }
-    var dragOffset by remember { mutableStateOf(0f) }
     val listState = rememberLazyListState()
+    val coroutineScope = rememberCoroutineScope()
+    val density = LocalDensity.current
 
-    // 每个item的高度（估算）
-    val itemHeight = 72.dp
+    // 拖拽状态
+    var draggedIndex by remember { mutableIntStateOf(-1) }
+    var dragOffset by remember { mutableFloatStateOf(0f) }
+
+    // 自动滚动控制
+    var isAutoScrolling by remember { mutableStateOf(false) }
+    var scrollDirection by remember { mutableIntStateOf(0) } // -1 向上, 1 向下, 0 停止
+
+    // 自动滚动协程
+    LaunchedEffect(isAutoScrolling, scrollDirection) {
+        if (isAutoScrolling && draggedIndex >= 0 && scrollDirection != 0) {
+            while (isAutoScrolling) {
+                val scrollPx = scrollDirection * 8 // 每帧滚动8px
+                listState.dispatchRawDelta(scrollPx.toFloat())
+                delay(16) // ~60fps
+            }
+        }
+    }
 
     LazyColumn(
         state = listState,
@@ -257,12 +274,11 @@ private fun DraggableFileList(
         }
 
         itemsIndexed(files, key = { _, file -> file.uri.toString() }) { index, file ->
-            val isDragging = draggedItemIndex == index
+            val isDragging = draggedIndex == index
 
-            // 计算当前item应该偏移的位置
             val offsetY by animateDpAsState(
-                targetValue = if (isDragging) dragOffset.dp else 0.dp,
-                label = "dragOffset"
+                targetValue = if (isDragging) with(density) { dragOffset.toDp() } else 0.dp,
+                label = "offsetY"
             )
 
             Box(
@@ -270,44 +286,79 @@ private fun DraggableFileList(
                     .zIndex(if (isDragging) 1f else 0f)
                     .graphicsLayer {
                         translationY = offsetY.toPx()
-                        scaleX = if (isDragging) 1.03f else 1f
-                        scaleY = if (isDragging) 1.03f else 1f
-                        shadowElevation = if (isDragging) 8f else 0f
+                        scaleX = if (isDragging) 1.05f else 1f
+                        scaleY = if (isDragging) 1.05f else 1f
+                        shadowElevation = if (isDragging) 10f else 0f
                     }
-                    .pointerInput(Unit) {
+                    .pointerInput(index) {
                         detectDragGesturesAfterLongPress(
                             onDragStart = {
-                                draggedItemIndex = index
+                                draggedIndex = index
                                 dragOffset = 0f
+                                isAutoScrolling = false
+                                scrollDirection = 0
                             },
                             onDrag = { change, dragAmount ->
                                 change.consume()
+
+                                if (draggedIndex < 0) return@detectDragGesturesAfterLongPress
+
                                 dragOffset += dragAmount.y
 
-                                // 计算当前应该交换到的目标位置
-                                val currentPosition = draggedItemIndex
-                                if (currentPosition >= 0) {
-                                    val itemHeightPx = itemHeight.toPx()
-                                    val displacement = dragOffset / itemHeightPx
-                                    val targetIndex = (currentPosition + displacement.roundToInt())
-                                        .coerceIn(0, files.size - 1)
+                                // 获取当前拖拽item的布局信息
+                                val layoutInfo = listState.layoutInfo
+                                val currentItem = layoutInfo.visibleItemsInfo.find { it.index == draggedIndex }
 
-                                    if (targetIndex != currentPosition) {
-                                        // 交换位置
-                                        onReorder(currentPosition, targetIndex)
-                                        draggedItemIndex = targetIndex
-                                        // 重置偏移，因为列表已经重新排列了
-                                        dragOffset = 0f
+                                if (currentItem != null) {
+                                    val itemCenterY = currentItem.offset + currentItem.size / 2f
+                                    val viewportHeight = layoutInfo.viewportEndOffset
+                                    val edgeThreshold = with(density) { 80.dp.toPx() }
+
+                                    // 边缘自动滚动检测
+                                    if (itemCenterY < edgeThreshold && layoutInfo.visibleItemsInfo.firstOrNull()?.index != 0) {
+                                        // 向上滚动
+                                        if (!isAutoScrolling || scrollDirection != -1) {
+                                            isAutoScrolling = true
+                                            scrollDirection = -1
+                                        }
+                                    } else if (itemCenterY > viewportHeight - edgeThreshold &&
+                                        layoutInfo.visibleItemsInfo.lastOrNull()?.let { it.index + 1 } != layoutInfo.totalItemsCount) {
+                                        // 向下滚动
+                                        if (!isAutoScrolling || scrollDirection != 1) {
+                                            isAutoScrolling = true
+                                            scrollDirection = 1
+                                        }
+                                    } else {
+                                        isAutoScrolling = false
+                                        scrollDirection = 0
+                                    }
+
+                                    // 计算交换位置
+                                    val itemHeight = currentItem.size
+                                    if (itemHeight > 0) {
+                                        val displacement = dragOffset / itemHeight
+                                        val targetIdx = (draggedIndex + displacement.roundToInt())
+                                            .coerceIn(0, files.size - 1)
+
+                                        if (targetIdx != draggedIndex) {
+                                            onReorder(draggedIndex, targetIdx)
+                                            draggedIndex = targetIdx
+                                            dragOffset = 0f
+                                        }
                                     }
                                 }
                             },
                             onDragEnd = {
-                                draggedItemIndex = -1
+                                draggedIndex = -1
                                 dragOffset = 0f
+                                isAutoScrolling = false
+                                scrollDirection = 0
                             },
                             onDragCancel = {
-                                draggedItemIndex = -1
+                                draggedIndex = -1
                                 dragOffset = 0f
+                                isAutoScrolling = false
+                                scrollDirection = 0
                             }
                         )
                     }
