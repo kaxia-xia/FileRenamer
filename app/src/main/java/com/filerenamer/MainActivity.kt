@@ -60,6 +60,7 @@ class MainActivity : ComponentActivity() {
                         onHideRenameDialog = { viewModel.hideRenameDialog() },
                         onRenameTextChange = { viewModel.setRenameText(it) },
                         onRenameCharCountChange = { viewModel.setRenameCharCount(it) },
+                        onRenamePositionChange = { viewModel.setRenamePosition(it) },
                         onRenameTypeChange = { viewModel.setRenameType(it) },
                         onExecuteRename = { viewModel.executeRename() },
                         onClearError = { viewModel.clearError() },

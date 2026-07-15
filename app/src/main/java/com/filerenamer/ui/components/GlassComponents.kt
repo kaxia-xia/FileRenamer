@@ -303,16 +303,18 @@ fun BottomActionBar(
 }
 
 /**
- * 重命名对话框 - 支持6种操作
+ * 重命名对话框 - 支持10种操作
  */
 @Composable
 fun RenameDialog(
     visible: Boolean,
     renameText: String,
     renameCharCount: String,
+    renamePosition: String,
     renameType: RenameType,
     onTextChange: (String) -> Unit,
     onCharCountChange: (String) -> Unit,
+    onPositionChange: (String) -> Unit,
     onTypeChange: (RenameType) -> Unit,
     onConfirm: () -> Unit,
     onDismiss: () -> Unit,
@@ -336,7 +338,7 @@ fun RenameDialog(
                 Column(
                     modifier = Modifier.verticalScroll(rememberScrollState())
                 ) {
-                    // 操作类型选择 - 三行
+                    // 操作类型选择 - 五行
                     Text(
                         text = "操作类型",
                         style = MaterialTheme.typography.labelLarge,
@@ -432,6 +434,72 @@ fun RenameDialog(
                             onClick = { onTypeChange(RenameType.REPLACE_LAST_N) },
                             label = { Text("替换后N个", fontSize = 13.sp) },
                             leadingIcon = if (renameType == RenameType.REPLACE_LAST_N) {
+                                { Icon(Icons.Default.Check, null, Modifier.size(16.dp)) }
+                            } else null,
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = accentColor.copy(alpha = 0.2f),
+                                selectedLabelColor = accentColor,
+                            )
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(6.dp))
+
+                    // 第四行：从前往后第N位插入/删除
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        FilterChip(
+                            selected = renameType == RenameType.INSERT_AT_N_FROM_START,
+                            onClick = { onTypeChange(RenameType.INSERT_AT_N_FROM_START) },
+                            label = { Text("前→后第N位插入", fontSize = 12.sp) },
+                            leadingIcon = if (renameType == RenameType.INSERT_AT_N_FROM_START) {
+                                { Icon(Icons.Default.Check, null, Modifier.size(16.dp)) }
+                            } else null,
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = accentColor.copy(alpha = 0.2f),
+                                selectedLabelColor = accentColor,
+                            )
+                        )
+                        FilterChip(
+                            selected = renameType == RenameType.DELETE_AT_N_FROM_START,
+                            onClick = { onTypeChange(RenameType.DELETE_AT_N_FROM_START) },
+                            label = { Text("前→后第N位删除", fontSize = 12.sp) },
+                            leadingIcon = if (renameType == RenameType.DELETE_AT_N_FROM_START) {
+                                { Icon(Icons.Default.Check, null, Modifier.size(16.dp)) }
+                            } else null,
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = accentColor.copy(alpha = 0.2f),
+                                selectedLabelColor = accentColor,
+                            )
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(6.dp))
+
+                    // 第五行：从后往前第N位插入/删除
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        FilterChip(
+                            selected = renameType == RenameType.INSERT_AT_N_FROM_END,
+                            onClick = { onTypeChange(RenameType.INSERT_AT_N_FROM_END) },
+                            label = { Text("后→前第N位插入", fontSize = 12.sp) },
+                            leadingIcon = if (renameType == RenameType.INSERT_AT_N_FROM_END) {
+                                { Icon(Icons.Default.Check, null, Modifier.size(16.dp)) }
+                            } else null,
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = accentColor.copy(alpha = 0.2f),
+                                selectedLabelColor = accentColor,
+                            )
+                        )
+                        FilterChip(
+                            selected = renameType == RenameType.DELETE_AT_N_FROM_END,
+                            onClick = { onTypeChange(RenameType.DELETE_AT_N_FROM_END) },
+                            label = { Text("后→前第N位删除", fontSize = 12.sp) },
+                            leadingIcon = if (renameType == RenameType.DELETE_AT_N_FROM_END) {
                                 { Icon(Icons.Default.Check, null, Modifier.size(16.dp)) }
                             } else null,
                             colors = FilterChipDefaults.filterChipColors(
@@ -550,6 +618,172 @@ fun RenameDialog(
                                     "示例: 替换前3个字符为\"XX\" → \"ABCDE.pdf\" → \"XXDE.pdf\""
                                 else
                                     "示例: 替换后3个字符为\"XX\" → \"ABCDE.pdf\" → \"ABXX.pdf\"",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                            )
+                        }
+                        // ===== 新增功能：从前往后第N位插入 =====
+                        RenameType.INSERT_AT_N_FROM_START -> {
+                            // 位置输入
+                            OutlinedTextField(
+                                value = renamePosition,
+                                onValueChange = onPositionChange,
+                                label = { Text("从前往后第几位插入？（从0开始）") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(12.dp),
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedBorderColor = accentColor,
+                                    cursorColor = accentColor,
+                                )
+                            )
+
+                            Spacer(modifier = Modifier.height(8.dp))
+
+                            // 插入文本输入
+                            OutlinedTextField(
+                                value = renameText,
+                                onValueChange = onTextChange,
+                                label = { Text("要插入的文本") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(12.dp),
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedBorderColor = accentColor,
+                                    cursorColor = accentColor,
+                                )
+                            )
+
+                            Spacer(modifier = Modifier.height(8.dp))
+
+                            Text(
+                                text = "示例: 位置2, 插入\"XX\" → \"ABCDE.pdf\" → \"ABXXCDE.pdf\"",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                            )
+                        }
+                        // ===== 新增功能：从前往后第N位删除 =====
+                        RenameType.DELETE_AT_N_FROM_START -> {
+                            // 位置输入
+                            OutlinedTextField(
+                                value = renamePosition,
+                                onValueChange = onPositionChange,
+                                label = { Text("从前往后第几位开始删除？（从0开始）") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(12.dp),
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedBorderColor = accentColor,
+                                    cursorColor = accentColor,
+                                )
+                            )
+
+                            Spacer(modifier = Modifier.height(8.dp))
+
+                            // 删除字符数输入
+                            OutlinedTextField(
+                                value = renameCharCount,
+                                onValueChange = onCharCountChange,
+                                label = { Text("删除几个字符？") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(12.dp),
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedBorderColor = accentColor,
+                                    cursorColor = accentColor,
+                                )
+                            )
+
+                            Spacer(modifier = Modifier.height(8.dp))
+
+                            Text(
+                                text = "示例: 位置1, 删除2个 → \"ABCDE.pdf\" → \"ADE.pdf\"",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                            )
+                        }
+                        // ===== 新增功能：从后往前第N位插入 =====
+                        RenameType.INSERT_AT_N_FROM_END -> {
+                            // 位置输入
+                            OutlinedTextField(
+                                value = renamePosition,
+                                onValueChange = onPositionChange,
+                                label = { Text("从后往前第几位插入？（从0开始）") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(12.dp),
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedBorderColor = accentColor,
+                                    cursorColor = accentColor,
+                                )
+                            )
+
+                            Spacer(modifier = Modifier.height(8.dp))
+
+                            // 插入文本输入
+                            OutlinedTextField(
+                                value = renameText,
+                                onValueChange = onTextChange,
+                                label = { Text("要插入的文本") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(12.dp),
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedBorderColor = accentColor,
+                                    cursorColor = accentColor,
+                                )
+                            )
+
+                            Spacer(modifier = Modifier.height(8.dp))
+
+                            Text(
+                                text = "示例: 位置2, 插入\"XX\" → \"ABCDE.pdf\" → \"ABCXXDE.pdf\"",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                            )
+                        }
+                        // ===== 新增功能：从后往前第N位删除 =====
+                        RenameType.DELETE_AT_N_FROM_END -> {
+                            // 位置输入
+                            OutlinedTextField(
+                                value = renamePosition,
+                                onValueChange = onPositionChange,
+                                label = { Text("从后往前第几位开始删除？（从0开始）") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(12.dp),
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedBorderColor = accentColor,
+                                    cursorColor = accentColor,
+                                )
+                            )
+
+                            Spacer(modifier = Modifier.height(8.dp))
+
+                            // 删除字符数输入
+                            OutlinedTextField(
+                                value = renameCharCount,
+                                onValueChange = onCharCountChange,
+                                label = { Text("删除几个字符？") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(12.dp),
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedBorderColor = accentColor,
+                                    cursorColor = accentColor,
+                                )
+                            )
+
+                            Spacer(modifier = Modifier.height(8.dp))
+
+                            Text(
+                                text = "示例: 位置2, 删除2个 → \"ABCDE.pdf\" → \"ABE.pdf\"",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
                             )

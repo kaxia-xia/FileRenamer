@@ -5,7 +5,9 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -34,6 +36,7 @@ fun MainScreen(
     onHideRenameDialog: () -> Unit,
     onRenameTextChange: (String) -> Unit,
     onRenameCharCountChange: (String) -> Unit,
+    onRenamePositionChange: (String) -> Unit,
     onRenameTypeChange: (RenameType) -> Unit,
     onExecuteRename: () -> Unit,
     onClearError: () -> Unit,
@@ -142,23 +145,17 @@ fun MainScreen(
                     }
                 }
 
-                // 结果提示
+                // 结果提示（含失败详情）
                 uiState.renameResult?.let { result ->
-                    Snackbar(
+                    RenameResultCard(
+                        summary = result,
+                        failDetails = uiState.renameFailDetails,
+                        onDismiss = onClearResult,
+                        accentColor = accentColor,
                         modifier = Modifier
                             .align(Alignment.BottomCenter)
-                            .padding(16.dp),
-                        action = {
-                            TextButton(onClick = onClearResult) {
-                                Text("关闭")
-                            }
-                        },
-                        containerColor = accentColor.copy(alpha = 0.2f),
-                        contentColor = accentColor,
-                        shape = RoundedCornerShape(12.dp),
-                    ) {
-                        Text(result)
-                    }
+                            .padding(16.dp)
+                    )
                 }
             }
 
@@ -179,14 +176,111 @@ fun MainScreen(
             visible = uiState.isRenameDialogVisible,
             renameText = uiState.renameText,
             renameCharCount = uiState.renameCharCount,
+            renamePosition = uiState.renamePosition,
             renameType = uiState.renameType,
             onTextChange = onRenameTextChange,
             onCharCountChange = onRenameCharCountChange,
+            onPositionChange = onRenamePositionChange,
             onTypeChange = onRenameTypeChange,
             onConfirm = onExecuteRename,
             onDismiss = onHideRenameDialog,
             accentColor = accentColor,
         )
+    }
+}
+
+/**
+ * 重命名结果卡片 - 显示概要并可展开查看失败详情
+ */
+@Composable
+private fun RenameResultCard(
+    summary: String,
+    failDetails: List<String>,
+    onDismiss: () -> Unit,
+    accentColor: Color,
+    modifier: Modifier = Modifier,
+) {
+    var expanded by remember { mutableStateOf(false) }
+
+    Card(
+        modifier = modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = if (failDetails.isEmpty())
+                accentColor.copy(alpha = 0.15f)
+            else
+                MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.9f)
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            // 概要行
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Icon(
+                    imageVector = if (failDetails.isEmpty()) Icons.Default.CheckCircle else Icons.Default.Warning,
+                    contentDescription = null,
+                    tint = if (failDetails.isEmpty()) accentColor else MaterialTheme.colorScheme.error,
+                    modifier = Modifier.size(24.dp)
+                )
+                Spacer(modifier = Modifier.width(10.dp))
+                Text(
+                    text = summary,
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Medium,
+                    color = if (failDetails.isEmpty())
+                        accentColor
+                    else
+                        MaterialTheme.colorScheme.onErrorContainer,
+                    modifier = Modifier.weight(1f)
+                )
+                TextButton(onClick = onDismiss) {
+                    Text("关闭", fontSize = 13.sp)
+                }
+            }
+
+            // 如果有失败详情，显示展开/折叠按钮
+            if (failDetails.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(4.dp))
+                TextButton(
+                    onClick = { expanded = !expanded },
+                    modifier = Modifier.padding(start = 34.dp)
+                ) {
+                    Icon(
+                        imageVector = if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(
+                        text = if (expanded) "收起失败详情" else "查看失败详情（${failDetails.size}条）",
+                        fontSize = 13.sp
+                    )
+                }
+
+                // 失败详情列表（可展开）
+                AnimatedVisibility(visible = expanded) {
+                    Column(
+                        modifier = Modifier
+                            .padding(start = 34.dp, top = 4.dp)
+                            .heightIn(max = 200.dp)
+                            .verticalScroll(rememberScrollState())
+                    ) {
+                        failDetails.forEach { detail ->
+                            Text(
+                                text = "• $detail",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.85f),
+                                lineHeight = 20.sp,
+                                modifier = Modifier.padding(bottom = 4.dp)
+                            )
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -300,8 +394,10 @@ private fun InitialContent(
                                 "2. 在系统文件选择器中找到目标文件夹\n" +
                                 "3. 浏览文件夹，勾选要重命名的文件和文件夹\n" +
                                 "4. 点击「批量重命名」选择操作类型\n" +
-                                "5. 支持：添加前缀、添加后缀、删除前N个字符、\n" +
-                                "   删除后N个字符、替换前N个字符、替换后N个字符",
+                                "5. 支持：添加前缀、添加后缀、删除前N个、\n" +
+                                "   删除后N个、替换前N个、替换后N个、\n" +
+                                "   从前往后第N位插入、从前往后第N位删除、\n" +
+                                "   从后往前第N位插入、从后往前第N位删除",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         lineHeight = 20.sp,

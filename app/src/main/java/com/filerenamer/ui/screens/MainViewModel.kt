@@ -25,10 +25,12 @@ data class MainUiState(
     val wallpaperColor: androidx.compose.ui.graphics.Color? = null,
     val renameText: String = "",
     val renameCharCount: String = "",
+    val renamePosition: String = "",
     val renameType: RenameType = RenameType.ADD_PREFIX,
     val isRenameDialogVisible: Boolean = false,
     val isRenaming: Boolean = false,
     val renameResult: String? = null,
+    val renameFailDetails: List<String> = emptyList(),
     val errorMessage: String? = null,
     val isInitialState: Boolean = true,
 )
@@ -167,8 +169,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         _uiState.value = _uiState.value.copy(
             isRenameDialogVisible = true,
             renameResult = null,
+            renameFailDetails = emptyList(),
             renameText = "",
             renameCharCount = "",
+            renamePosition = "",
         )
     }
 
@@ -177,6 +181,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             isRenameDialogVisible = false,
             renameText = "",
             renameCharCount = "",
+            renamePosition = "",
         )
     }
 
@@ -187,6 +192,11 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun setRenameCharCount(count: String) {
         val filtered = count.filter { it.isDigit() }
         _uiState.value = _uiState.value.copy(renameCharCount = filtered)
+    }
+
+    fun setRenamePosition(position: String) {
+        val filtered = position.filter { it.isDigit() }
+        _uiState.value = _uiState.value.copy(renamePosition = filtered)
     }
 
     fun setRenameType(type: RenameType) {
@@ -222,6 +232,29 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     return
                 }
             }
+            RenameType.INSERT_AT_N_FROM_START, RenameType.INSERT_AT_N_FROM_END -> {
+                val pos = state.renamePosition.toIntOrNull()
+                if (pos == null || pos < 0) {
+                    _uiState.value = state.copy(errorMessage = "请输入有效的位置（从0开始）")
+                    return
+                }
+                if (state.renameText.isBlank()) {
+                    _uiState.value = state.copy(errorMessage = "请输入要插入的文本")
+                    return
+                }
+            }
+            RenameType.DELETE_AT_N_FROM_START, RenameType.DELETE_AT_N_FROM_END -> {
+                val pos = state.renamePosition.toIntOrNull()
+                if (pos == null || pos < 0) {
+                    _uiState.value = state.copy(errorMessage = "请输入有效的位置（从0开始）")
+                    return
+                }
+                val count = state.renameCharCount.toIntOrNull()
+                if (count == null || count <= 0) {
+                    _uiState.value = state.copy(errorMessage = "请输入要删除的字符数（大于0）")
+                    return
+                }
+            }
         }
 
         val selectedItems = state.files.filter { it.isSelected }
@@ -235,16 +268,22 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             try {
                 val charCount = state.renameCharCount.toIntOrNull() ?: 0
-                val operation = RenameOperation(state.renameType, state.renameText, charCount)
-                val (success, fail) = FileUtils.batchRename(
+                val position = state.renamePosition.toIntOrNull() ?: 0
+                val operation = RenameOperation(state.renameType, state.renameText, charCount, position)
+                val result = FileUtils.batchRename(
                     getApplication(),
                     parentUri,
                     selectedItems,
                     operation
                 )
 
+                // 构建结果消息
+                val summaryMsg = "重命名完成：成功 ${result.successCount} 个，失败 ${result.failCount} 个"
+                val details = result.failReasons
+
                 _uiState.value = _uiState.value.copy(
-                    renameResult = "重命名完成：成功 $success 个，失败 $fail 个",
+                    renameResult = summaryMsg,
+                    renameFailDetails = details,
                     isRenaming = false,
                 )
 
@@ -263,6 +302,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun clearRenameResult() {
-        _uiState.value = _uiState.value.copy(renameResult = null)
+        _uiState.value = _uiState.value.copy(renameResult = null, renameFailDetails = emptyList())
     }
 }
