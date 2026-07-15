@@ -29,6 +29,9 @@ data class MainUiState(
     val renameType: RenameType = RenameType.ADD_PREFIX,
     val isRenameDialogVisible: Boolean = false,
     val isRenaming: Boolean = false,
+    // 重命名进度
+    val renameProgress: Int = 0,      // 当前处理到第几个
+    val renameTotal: Int = 0,         // 总共需要处理几个
     val renameResult: String? = null,
     val renameFailDetails: List<String> = emptyList(),
     val errorMessage: String? = null,
@@ -267,7 +270,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     return
                 }
             }
-            // 添加前缀/后缀id号不需要额外参数
             RenameType.ADD_ID_PREFIX, RenameType.ADD_ID_SUFFIX -> {
                 // 无需额外验证
             }
@@ -279,7 +281,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             return
         }
 
-        _uiState.value = state.copy(isRenaming = true, isRenameDialogVisible = false, errorMessage = null)
+        _uiState.value = state.copy(
+            isRenaming = true,
+            isRenameDialogVisible = false,
+            errorMessage = null,
+            renameProgress = 0,
+            renameTotal = selectedItems.size,
+        )
 
         viewModelScope.launch {
             try {
@@ -290,7 +298,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     getApplication(),
                     parentUri,
                     selectedItems,
-                    operation
+                    operation,
+                    onProgress = { current, total ->
+                        _uiState.value = _uiState.value.copy(
+                            renameProgress = current,
+                            renameTotal = total,
+                        )
+                    }
                 )
 
                 val summaryMsg = "重命名完成：成功 ${result.successCount} 个，失败 ${result.failCount} 个"

@@ -84,13 +84,32 @@ fun MainScreen(
                     uiState.isLoading || uiState.isRenaming -> {
                         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                             Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                CircularProgressIndicator(color = accentColor, modifier = Modifier.size(40.dp))
-                                Spacer(Modifier.height(12.dp))
-                                Text(
-                                    if (uiState.isRenaming) "正在重命名..." else "加载中...",
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
+                                if (uiState.isRenaming && uiState.renameTotal > 0) {
+                                    // 显示进度条
+                                    LinearProgressIndicator(
+                                        progress = { uiState.renameProgress.toFloat() / uiState.renameTotal.toFloat() },
+                                        modifier = Modifier
+                                            .width(250.dp)
+                                            .height(8.dp)
+                                            .clip(RoundedCornerShape(4.dp)),
+                                        color = accentColor,
+                                        trackColor = accentColor.copy(alpha = 0.15f),
+                                    )
+                                    Spacer(Modifier.height(12.dp))
+                                    Text(
+                                        "正在重命名 ${uiState.renameProgress}/${uiState.renameTotal}...",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                } else {
+                                    CircularProgressIndicator(color = accentColor, modifier = Modifier.size(40.dp))
+                                    Spacer(Modifier.height(12.dp))
+                                    Text(
+                                        "加载中...",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
                             }
                         }
                     }
@@ -144,11 +163,6 @@ fun MainScreen(
 
 /**
  * 可拖拽排序的文件列表 - 使用 sh.calvin.reorderable 库
- *
- * 每个 item 左侧有一个拖拽手柄图标，长按手柄即可拖动排序。
- * 点击 item 其他区域触发勾选/取消勾选。
- *
- * 注意：LazyColumn 中标题 item 占 index 0，所以文件 item 的 index 需要减 1。
  */
 @Composable
 private fun DraggableFileList(
@@ -173,8 +187,6 @@ private fun DraggableFileList(
 
     val lazyListState = rememberLazyListState()
     val reorderableLazyListState = rememberReorderableLazyListState(lazyListState) { from, to ->
-        // from.index 和 to.index 是 LazyColumn 中的 index（包含标题 item 0）
-        // 文件列表的 index 需要减 1
         val fromFileIdx = from.index - 1
         val toFileIdx = to.index - 1
         if (fromFileIdx >= 0 && toFileIdx >= 0 && fromFileIdx < files.size && toFileIdx < files.size) {
