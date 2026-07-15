@@ -401,6 +401,73 @@ object FileUtils {
                     }
                 }
             }
+            // ===== 新增：从前往后第n位开始替换m个字符 =====
+            RenameType.REPLACE_AT_N_FROM_START -> {
+                val pos = operation.position
+                val count = operation.charCount
+                val replacement = operation.text
+                if (pos < 0) return NewNameResult("", false, "替换起始位置($pos)不能为负数")
+                if (count <= 0) return NewNameResult("", false, "替换字符数($count)必须大于0")
+
+                if (isDirectory) {
+                    if (pos + count > currentName.length) return NewNameResult("", false, "从位置${pos}替换${count}个字符超出文件名长度(${currentName.length})")
+                    NewNameResult("${currentName.substring(0, pos)}$replacement${currentName.substring(pos + count)}")
+                } else {
+                    val dotIndex = currentName.lastIndexOf('.')
+                    if (dotIndex > 0) {
+                        val baseName = currentName.substring(0, dotIndex)
+                        val extension = currentName.substring(dotIndex)
+                        if (pos + count > baseName.length) return NewNameResult("", false, "从位置${pos}替换${count}个字符超出文件名主名长度(${baseName.length})")
+                        NewNameResult("${baseName.substring(0, pos)}$replacement${baseName.substring(pos + count)}$extension")
+                    } else {
+                        if (pos + count > currentName.length) return NewNameResult("", false, "从位置${pos}替换${count}个字符超出文件名长度(${currentName.length})")
+                        NewNameResult("${currentName.substring(0, pos)}$replacement${currentName.substring(pos + count)}")
+                    }
+                }
+            }
+            // ===== 新增：从后往前第n位开始替换m个字符 =====
+            RenameType.REPLACE_AT_N_FROM_END -> {
+                val pos = operation.position
+                val count = operation.charCount
+                val replacement = operation.text
+                if (pos < 0) return NewNameResult("", false, "替换位置($pos)不能为负数")
+                if (count <= 0) return NewNameResult("", false, "替换字符数($count)必须大于0")
+
+                if (isDirectory) {
+                    val replaceStart = currentName.length - pos - count
+                    if (replaceStart < 0 || replaceStart + count > currentName.length) return NewNameResult("", false, "从后往前第${pos}位替换${count}个字符超出文件名长度(${currentName.length})")
+                    NewNameResult("${currentName.substring(0, replaceStart)}$replacement${currentName.substring(replaceStart + count)}")
+                } else {
+                    val dotIndex = currentName.lastIndexOf('.')
+                    if (dotIndex > 0) {
+                        val baseName = currentName.substring(0, dotIndex)
+                        val extension = currentName.substring(dotIndex)
+                        val replaceStart = baseName.length - pos - count
+                        if (replaceStart < 0 || replaceStart + count > baseName.length) return NewNameResult("", false, "从后往前第${pos}位替换${count}个字符超出文件名主名长度(${baseName.length})")
+                        NewNameResult("${baseName.substring(0, replaceStart)}$replacement${baseName.substring(replaceStart + count)}$extension")
+                    } else {
+                        val replaceStart = currentName.length - pos - count
+                        if (replaceStart < 0 || replaceStart + count > currentName.length) return NewNameResult("", false, "从后往前第${pos}位替换${count}个字符超出文件名长度(${currentName.length})")
+                        NewNameResult("${currentName.substring(0, replaceStart)}$replacement${currentName.substring(replaceStart + count)}")
+                    }
+                }
+            }
+            // ===== 新增：替换文件名中的空格为指定字符串 =====
+            RenameType.REPLACE_SPACE -> {
+                val replacement = operation.text
+                if (isDirectory) {
+                    NewNameResult(currentName.replace(" ", replacement))
+                } else {
+                    val dotIndex = currentName.lastIndexOf('.')
+                    if (dotIndex > 0) {
+                        val baseName = currentName.substring(0, dotIndex)
+                        val extension = currentName.substring(dotIndex)
+                        NewNameResult("${baseName.replace(" ", replacement)}$extension")
+                    } else {
+                        NewNameResult(currentName.replace(" ", replacement))
+                    }
+                }
+            }
         }
     }
 }

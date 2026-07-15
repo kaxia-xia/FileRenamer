@@ -555,6 +555,51 @@ fun RenameDialog(
                         )
                     }
 
+                    Spacer(modifier = Modifier.height(6.dp))
+
+                    // 第七行：从前往后/从后往前第n位替换 + 替换空格
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        FilterChip(
+                            selected = renameType == RenameType.REPLACE_AT_N_FROM_START,
+                            onClick = { onTypeChange(RenameType.REPLACE_AT_N_FROM_START) },
+                            label = { Text("前→后第N位替换", fontSize = 12.sp) },
+                            leadingIcon = if (renameType == RenameType.REPLACE_AT_N_FROM_START) {
+                                { Icon(Icons.Default.Check, null, Modifier.size(16.dp)) }
+                            } else null,
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = accentColor.copy(alpha = 0.2f),
+                                selectedLabelColor = accentColor,
+                            )
+                        )
+                        FilterChip(
+                            selected = renameType == RenameType.REPLACE_AT_N_FROM_END,
+                            onClick = { onTypeChange(RenameType.REPLACE_AT_N_FROM_END) },
+                            label = { Text("后→前第N位替换", fontSize = 12.sp) },
+                            leadingIcon = if (renameType == RenameType.REPLACE_AT_N_FROM_END) {
+                                { Icon(Icons.Default.Check, null, Modifier.size(16.dp)) }
+                            } else null,
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = accentColor.copy(alpha = 0.2f),
+                                selectedLabelColor = accentColor,
+                            )
+                        )
+                        FilterChip(
+                            selected = renameType == RenameType.REPLACE_SPACE,
+                            onClick = { onTypeChange(RenameType.REPLACE_SPACE) },
+                            label = { Text("替换空格", fontSize = 13.sp) },
+                            leadingIcon = if (renameType == RenameType.REPLACE_SPACE) {
+                                { Icon(Icons.Default.Check, null, Modifier.size(16.dp)) }
+                            } else null,
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = accentColor.copy(alpha = 0.2f),
+                                selectedLabelColor = accentColor,
+                            )
+                        )
+                    }
+
                     Spacer(modifier = Modifier.height(16.dp))
 
                     // 输入区域
@@ -862,6 +907,130 @@ fun RenameDialog(
                                 text = "示例: 文件名_01.pdf, 文件名_02.pdf",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                            )
+                        }
+                        // ===== 新增：从前往后第n位替换m个字符 =====
+                        RenameType.REPLACE_AT_N_FROM_START -> {
+                            OutlinedTextField(
+                                value = renamePosition,
+                                onValueChange = onPositionChange,
+                                label = { Text("从前往后第几位开始替换？（从0开始）") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(12.dp),
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedBorderColor = accentColor,
+                                    cursorColor = accentColor,
+                                )
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            OutlinedTextField(
+                                value = renameCharCount,
+                                onValueChange = onCharCountChange,
+                                label = { Text("替换几个字符？") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(12.dp),
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedBorderColor = accentColor,
+                                    cursorColor = accentColor,
+                                )
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            OutlinedTextField(
+                                value = renameText,
+                                onValueChange = onTextChange,
+                                label = { Text("替换为") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(12.dp),
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedBorderColor = accentColor,
+                                    cursorColor = accentColor,
+                                )
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                text = "示例: 位置1, 替换2个为\"XX\" → \"ABCDE.pdf\" → \"AXXDE.pdf\"",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                            )
+                        }
+                        // ===== 新增：从后往前第n位替换m个字符 =====
+                        RenameType.REPLACE_AT_N_FROM_END -> {
+                            OutlinedTextField(
+                                value = renamePosition,
+                                onValueChange = onPositionChange,
+                                label = { Text("从后往前第几位开始替换？（从0开始）") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(12.dp),
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedBorderColor = accentColor,
+                                    cursorColor = accentColor,
+                                )
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            OutlinedTextField(
+                                value = renameCharCount,
+                                onValueChange = onCharCountChange,
+                                label = { Text("替换几个字符？") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(12.dp),
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedBorderColor = accentColor,
+                                    cursorColor = accentColor,
+                                )
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            OutlinedTextField(
+                                value = renameText,
+                                onValueChange = onTextChange,
+                                label = { Text("替换为") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(12.dp),
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedBorderColor = accentColor,
+                                    cursorColor = accentColor,
+                                )
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                text = "示例: 位置2, 替换2个为\"XX\" → \"ABCDE.pdf\" → \"ABCXX.pdf\"",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                            )
+                        }
+                        // ===== 新增：替换空格 =====
+                        RenameType.REPLACE_SPACE -> {
+                            OutlinedTextField(
+                                value = renameText,
+                                onValueChange = onTextChange,
+                                label = { Text("将空格替换为") },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(12.dp),
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedBorderColor = accentColor,
+                                    cursorColor = accentColor,
+                                )
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                text = "示例: 替换为\"_\" → \"我的 文件.pdf\" → \"我的_文件.pdf\"",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                            )
+                            Text(
+                                text = "提示: 留空则直接删除所有空格",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
                             )
                         }
                     }

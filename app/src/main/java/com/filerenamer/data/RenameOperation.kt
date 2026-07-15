@@ -11,8 +11,11 @@ enum class RenameType {
     DELETE_AT_N_FROM_START,
     INSERT_AT_N_FROM_END,
     DELETE_AT_N_FROM_END,
-    ADD_ID_PREFIX,    // 添加前缀id号
-    ADD_ID_SUFFIX,    // 添加后缀id号
+    ADD_ID_PREFIX,
+    ADD_ID_SUFFIX,
+    REPLACE_AT_N_FROM_START,   // 从前往后第n位开始替换m个字符
+    REPLACE_AT_N_FROM_END,     // 从后往前第n位开始替换m个字符
+    REPLACE_SPACE,             // 替换空格为指定字符串
 }
 
 data class RenameOperation(
