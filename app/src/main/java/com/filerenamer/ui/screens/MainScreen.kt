@@ -203,9 +203,9 @@ fun MainScreen(
 /**
  * 可拖拽排序的文件列表 - 支持连续跨位拖动和边缘自动滚动
  *
- * 核心思路：每次 onDrag 只交换一个位置（如果偏移超过阈值），
- * 然后重置偏移量，让重组后的下一次 onDrag 继续判断。
- * 这样避免了 while 循环中连续调用 onReorder 导致的状态不同步问题。
+ * 使用 rememberUpdatedState 确保 pointerInput 内部始终拿到最新的 files 和 onReorder 引用。
+ * 每次 onDrag 只交换一个位置，交换后 dragOffset 置零，
+ * 下一帧重组后继续判断，从而实现连续跨位拖动。
  */
 @Composable
 private fun DraggableFileList(
@@ -240,6 +240,10 @@ private fun DraggableFileList(
 
     val listState = rememberLazyListState()
     val density = LocalDensity.current
+
+    // 用 rememberUpdatedState 持有最新引用，pointerInput 内部始终能读到最新的值
+    val currentFiles by rememberUpdatedState(files)
+    val currentOnReorder by rememberUpdatedState(onReorder)
 
     // 拖拽状态
     var draggedIndex by remember { mutableIntStateOf(-1) }
@@ -321,24 +325,24 @@ private fun DraggableFileList(
 
                                     // === 单步交换逻辑 ===
                                     // 每次 onDrag 最多交换一个位置，交换后重置偏移量，
-                                    // 下一次 onDrag 会基于新位置继续判断
+                                    // 下一帧重组后 draggedIndex 已更新，继续判断
                                     if (itemHeight > 0) {
                                         // 向下拖动：偏移超过一个item高度就交换到下一位置
                                         if (dragOffset > itemHeight) {
                                             val targetIdx = draggedIndex + 1
-                                            if (targetIdx < files.size) {
-                                                onReorder(draggedIndex, targetIdx)
+                                            if (targetIdx < currentFiles.size) {
+                                                currentOnReorder(draggedIndex, targetIdx)
                                                 draggedIndex = targetIdx
-                                                dragOffset = 0f // 重置偏移，让新item从0开始
+                                                dragOffset = 0f
                                             }
                                         }
                                         // 向上拖动：偏移超过一个item高度就交换到上一位置
                                         else if (dragOffset < -itemHeight) {
                                             val targetIdx = draggedIndex - 1
                                             if (targetIdx >= 0) {
-                                                onReorder(draggedIndex, targetIdx)
+                                                currentOnReorder(draggedIndex, targetIdx)
                                                 draggedIndex = targetIdx
-                                                dragOffset = 0f // 重置偏移，让新item从0开始
+                                                dragOffset = 0f
                                             }
                                         }
                                     }
