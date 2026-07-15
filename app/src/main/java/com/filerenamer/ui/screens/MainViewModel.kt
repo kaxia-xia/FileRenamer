@@ -165,6 +165,21 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         )
     }
 
+    /**
+     * 拖动排序：将文件从 fromIndex 移动到 toIndex
+     */
+    fun reorderFiles(fromIndex: Int, toIndex: Int) {
+        val currentFiles = _uiState.value.files.toMutableList()
+        if (fromIndex < 0 || fromIndex >= currentFiles.size) return
+        if (toIndex < 0 || toIndex >= currentFiles.size) return
+        if (fromIndex == toIndex) return
+
+        val item = currentFiles.removeAt(fromIndex)
+        currentFiles.add(toIndex, item)
+
+        _uiState.value = _uiState.value.copy(files = currentFiles)
+    }
+
     fun showRenameDialog() {
         _uiState.value = _uiState.value.copy(
             isRenameDialogVisible = true,

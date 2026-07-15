@@ -56,6 +56,7 @@ class MainActivity : ComponentActivity() {
                         onGoBack = { viewModel.goBack() },
                         onToggleFile = { viewModel.toggleFileSelection(it) },
                         onToggleSelectAll = { viewModel.toggleSelectAll() },
+                        onReorderFiles = { from, to -> viewModel.reorderFiles(from, to) },
                         onShowRenameDialog = { viewModel.showRenameDialog() },
                         onHideRenameDialog = { viewModel.hideRenameDialog() },
                         onRenameTextChange = { viewModel.setRenameText(it) },

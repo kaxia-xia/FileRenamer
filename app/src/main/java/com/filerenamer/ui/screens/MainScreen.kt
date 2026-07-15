@@ -1,10 +1,13 @@
 package com.filerenamer.ui.screens
 
 import androidx.compose.animation.*
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -15,14 +18,20 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.zIndex
 import com.filerenamer.data.RenameType
 import com.filerenamer.ui.components.*
+import kotlin.math.roundToInt
 
 @Composable
 fun MainScreen(
@@ -32,6 +41,7 @@ fun MainScreen(
     onGoBack: () -> Unit,
     onToggleFile: (com.filerenamer.data.FileItem) -> Unit,
     onToggleSelectAll: () -> Unit,
+    onReorderFiles: (Int, Int) -> Unit,
     onShowRenameDialog: () -> Unit,
     onHideRenameDialog: () -> Unit,
     onRenameTextChange: (String) -> Unit,
@@ -117,10 +127,11 @@ fun MainScreen(
                         }
                     }
                     else -> {
-                        FileListContent(
+                        DraggableFileList(
                             files = uiState.files,
                             onToggleFile = onToggleFile,
                             onEnterDirectory = onEnterDirectory,
+                            onReorder = onReorderFiles,
                             accentColor = accentColor,
                         )
                     }
@@ -186,6 +197,137 @@ fun MainScreen(
             onDismiss = onHideRenameDialog,
             accentColor = accentColor,
         )
+    }
+}
+
+/**
+ * 可拖拽排序的文件列表
+ */
+@Composable
+private fun DraggableFileList(
+    files: List<com.filerenamer.data.FileItem>,
+    onToggleFile: (com.filerenamer.data.FileItem) -> Unit,
+    onEnterDirectory: (com.filerenamer.data.FileItem) -> Unit,
+    onReorder: (Int, Int) -> Unit,
+    accentColor: Color,
+) {
+    if (files.isEmpty()) {
+        Box(
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = Alignment.Center
+        ) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Icon(
+                    imageVector = Icons.Default.FolderOpen,
+                    contentDescription = null,
+                    modifier = Modifier.size(64.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
+                )
+                Spacer(modifier = Modifier.height(16.dp))
+                Text(
+                    text = "此目录为空",
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                )
+            }
+        }
+        return
+    }
+
+    // 拖拽状态
+    var draggedItemIndex by remember { mutableStateOf(-1) }
+    var dragOffset by remember { mutableStateOf(0f) }
+    val listState = rememberLazyListState()
+
+    // 每个item的高度（估算）
+    val itemHeight = 72.dp
+
+    LazyColumn(
+        state = listState,
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(vertical = 8.dp),
+    ) {
+        item {
+            Text(
+                text = "共 ${files.size} 项（长按拖动排序）",
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp),
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+
+        itemsIndexed(files, key = { _, file -> file.uri.toString() }) { index, file ->
+            val isDragging = draggedItemIndex == index
+
+            // 计算当前item应该偏移的位置
+            val offsetY by animateDpAsState(
+                targetValue = if (isDragging) dragOffset.dp else 0.dp,
+                label = "dragOffset"
+            )
+
+            Box(
+                modifier = Modifier
+                    .zIndex(if (isDragging) 1f else 0f)
+                    .graphicsLayer {
+                        translationY = offsetY.toPx()
+                        scaleX = if (isDragging) 1.03f else 1f
+                        scaleY = if (isDragging) 1.03f else 1f
+                        shadowElevation = if (isDragging) 8f else 0f
+                    }
+                    .pointerInput(Unit) {
+                        detectDragGesturesAfterLongPress(
+                            onDragStart = {
+                                draggedItemIndex = index
+                                dragOffset = 0f
+                            },
+                            onDrag = { change, dragAmount ->
+                                change.consume()
+                                dragOffset += dragAmount.y
+
+                                // 计算当前应该交换到的目标位置
+                                val currentPosition = draggedItemIndex
+                                if (currentPosition >= 0) {
+                                    val itemHeightPx = itemHeight.toPx()
+                                    val displacement = dragOffset / itemHeightPx
+                                    val targetIndex = (currentPosition + displacement.roundToInt())
+                                        .coerceIn(0, files.size - 1)
+
+                                    if (targetIndex != currentPosition) {
+                                        // 交换位置
+                                        onReorder(currentPosition, targetIndex)
+                                        draggedItemIndex = targetIndex
+                                        // 重置偏移，因为列表已经重新排列了
+                                        dragOffset = 0f
+                                    }
+                                }
+                            },
+                            onDragEnd = {
+                                draggedItemIndex = -1
+                                dragOffset = 0f
+                            },
+                            onDragCancel = {
+                                draggedItemIndex = -1
+                                dragOffset = 0f
+                            }
+                        )
+                    }
+            ) {
+                FileItemCard(
+                    fileItem = file,
+                    onToggle = { onToggleFile(file) },
+                    onDoubleClick = {
+                        if (file.isDirectory) {
+                            onEnterDirectory(file)
+                        }
+                    },
+                    accentColor = accentColor,
+                )
+            }
+        }
+
+        item {
+            Spacer(modifier = Modifier.height(16.dp))
+        }
     }
 }
 
@@ -393,8 +535,9 @@ private fun InitialContent(
                         text = "1. 点击「选择文件夹」按钮\n" +
                                 "2. 在系统文件选择器中找到目标文件夹\n" +
                                 "3. 浏览文件夹，勾选要重命名的文件和文件夹\n" +
-                                "4. 点击「批量重命名」选择操作类型\n" +
-                                "5. 支持：添加前缀、添加后缀、删除前N个、\n" +
+                                "4. 长按文件可拖动排序列表\n" +
+                                "5. 点击「批量重命名」选择操作类型\n" +
+                                "6. 支持：添加前缀、添加后缀、删除前N个、\n" +
                                 "   删除后N个、替换前N个、替换后N个、\n" +
                                 "   从前往后第N位插入、从前往后第N位删除、\n" +
                                 "   从后往前第N位插入、从后往前第N位删除",
@@ -404,68 +547,6 @@ private fun InitialContent(
                     )
                 }
             }
-        }
-    }
-}
-
-@Composable
-private fun FileListContent(
-    files: List<com.filerenamer.data.FileItem>,
-    onToggleFile: (com.filerenamer.data.FileItem) -> Unit,
-    onEnterDirectory: (com.filerenamer.data.FileItem) -> Unit,
-    accentColor: Color,
-) {
-    if (files.isEmpty()) {
-        Box(
-            modifier = Modifier.fillMaxSize(),
-            contentAlignment = Alignment.Center
-        ) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Icon(
-                    imageVector = Icons.Default.FolderOpen,
-                    contentDescription = null,
-                    modifier = Modifier.size(64.dp),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
-                )
-                Spacer(modifier = Modifier.height(16.dp))
-                Text(
-                    text = "此目录为空",
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
-                )
-            }
-        }
-        return
-    }
-
-    LazyColumn(
-        modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(vertical = 8.dp),
-    ) {
-        item {
-            Text(
-                text = "共 ${files.size} 项",
-                style = MaterialTheme.typography.bodySmall,
-                modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp),
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
-
-        items(files, key = { it.uri.toString() }) { file ->
-            FileItemCard(
-                fileItem = file,
-                onToggle = { onToggleFile(file) },
-                onDoubleClick = {
-                    if (file.isDirectory) {
-                        onEnterDirectory(file)
-                    }
-                },
-                accentColor = accentColor,
-            )
-        }
-
-        item {
-            Spacer(modifier = Modifier.height(16.dp))
         }
     }
 }
