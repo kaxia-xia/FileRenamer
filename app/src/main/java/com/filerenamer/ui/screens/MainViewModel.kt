@@ -165,9 +165,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         )
     }
 
-    /**
-     * 拖动排序：将文件从 fromIndex 移动到 toIndex
-     */
     fun reorderFiles(fromIndex: Int, toIndex: Int) {
         val currentFiles = _uiState.value.files.toMutableList()
         if (fromIndex < 0 || fromIndex >= currentFiles.size) return
@@ -270,6 +267,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     return
                 }
             }
+            // 添加前缀/后缀id号不需要额外参数
+            RenameType.ADD_ID_PREFIX, RenameType.ADD_ID_SUFFIX -> {
+                // 无需额外验证
+            }
         }
 
         val selectedItems = state.files.filter { it.isSelected }
@@ -292,7 +293,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     operation
                 )
 
-                // 构建结果消息
                 val summaryMsg = "重命名完成：成功 ${result.successCount} 个，失败 ${result.failCount} 个"
                 val details = result.failReasons
 

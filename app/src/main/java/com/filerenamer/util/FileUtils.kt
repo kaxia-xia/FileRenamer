@@ -37,7 +37,7 @@ object FileUtils {
                     items.add(
                         FileItem(
                             uri = child.uri,
-                            name = name,
+                            name = child.name ?: "未知",
                             isDirectory = child.isDirectory,
                             size = if (!child.isDirectory) child.length() else 0,
                             lastModified = child.lastModified()
@@ -74,7 +74,16 @@ object FileUtils {
             return@withContext RenameResult(0, items.size, listOf("无法访问父目录"))
         }
 
-        for (item in items) {
+        // 计算 id 号的补零位数
+        val idPadLen = when {
+            items.size < 10 -> 1
+            items.size < 100 -> 2
+            items.size < 1000 -> 3
+            items.size < 10000 -> 4
+            else -> 5
+        }
+
+        for ((index, item) in items.withIndex()) {
             try {
                 // 通过父目录查找文件（更可靠的方式）
                 val file = parentDir.findFile(item.name)
@@ -86,7 +95,11 @@ object FileUtils {
                     continue
                 }
 
-                val newNameResult = computeNewName(item.name, file.isDirectory, operation)
+                // id 号从 1 开始
+                val id = index + 1
+                val idStr = id.toString().padStart(idPadLen, '0')
+
+                val newNameResult = computeNewName(item.name, file.isDirectory, operation, idStr)
                 if (newNameResult == null) {
                     val reason = "「${item.name}」参数错误，无法计算新文件名"
                     failCount++
@@ -137,11 +150,14 @@ object FileUtils {
 
     /**
      * 计算新文件名
+     *
+     * @param idStr 当前文件的 id 号（已补零），仅用于 ADD_ID_PREFIX 和 ADD_ID_SUFFIX
      */
     private fun computeNewName(
         currentName: String,
         isDirectory: Boolean,
-        operation: RenameOperation
+        operation: RenameOperation,
+        idStr: String = ""
     ): NewNameResult? {
         return when (operation.type) {
             RenameType.ADD_PREFIX -> {
@@ -251,7 +267,6 @@ object FileUtils {
                     }
                 }
             }
-            // ===== 新增功能 =====
 
             // 从前往后数第n个位置插入m个字符
             RenameType.INSERT_AT_N_FROM_START -> {
@@ -388,6 +403,39 @@ object FileUtils {
                             return NewNameResult("", false, "从后往前第${pos}位删除${count}个字符超出文件名长度(${currentName.length})")
                         }
                         NewNameResult("${currentName.substring(0, deleteStart)}${currentName.substring(deleteStart + count)}")
+                    }
+                }
+            }
+
+            // ===== 新增：添加前缀id号 =====
+            RenameType.ADD_ID_PREFIX -> {
+                // id_原文件名（保留扩展名）
+                if (isDirectory) {
+                    NewNameResult("${idStr}_$currentName")
+                } else {
+                    val dotIndex = currentName.lastIndexOf('.')
+                    if (dotIndex > 0) {
+                        val baseName = currentName.substring(0, dotIndex)
+                        val extension = currentName.substring(dotIndex)
+                        NewNameResult("${idStr}_$baseName$extension")
+                    } else {
+                        NewNameResult("${idStr}_$currentName")
+                    }
+                }
+            }
+            // ===== 新增：添加后缀id号 =====
+            RenameType.ADD_ID_SUFFIX -> {
+                // 原文件名_id（保留扩展名）
+                if (isDirectory) {
+                    NewNameResult("${currentName}_$idStr")
+                } else {
+                    val dotIndex = currentName.lastIndexOf('.')
+                    if (dotIndex > 0) {
+                        val baseName = currentName.substring(0, dotIndex)
+                        val extension = currentName.substring(dotIndex)
+                        NewNameResult("${baseName}_$idStr$extension")
+                    } else {
+                        NewNameResult("${currentName}_$idStr")
                     }
                 }
             }

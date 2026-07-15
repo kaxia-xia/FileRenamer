@@ -522,6 +522,39 @@ fun RenameDialog(
                         )
                     }
 
+                    Spacer(modifier = Modifier.height(6.dp))
+
+                    // 第六行：添加前缀id号/后缀id号
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        FilterChip(
+                            selected = renameType == RenameType.ADD_ID_PREFIX,
+                            onClick = { onTypeChange(RenameType.ADD_ID_PREFIX) },
+                            label = { Text("前缀id号", fontSize = 13.sp) },
+                            leadingIcon = if (renameType == RenameType.ADD_ID_PREFIX) {
+                                { Icon(Icons.Default.Check, null, Modifier.size(16.dp)) }
+                            } else null,
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = accentColor.copy(alpha = 0.2f),
+                                selectedLabelColor = accentColor,
+                            )
+                        )
+                        FilterChip(
+                            selected = renameType == RenameType.ADD_ID_SUFFIX,
+                            onClick = { onTypeChange(RenameType.ADD_ID_SUFFIX) },
+                            label = { Text("后缀id号", fontSize = 13.sp) },
+                            leadingIcon = if (renameType == RenameType.ADD_ID_SUFFIX) {
+                                { Icon(Icons.Default.Check, null, Modifier.size(16.dp)) }
+                            } else null,
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = accentColor.copy(alpha = 0.2f),
+                                selectedLabelColor = accentColor,
+                            )
+                        )
+                    }
+
                     Spacer(modifier = Modifier.height(16.dp))
 
                     // 输入区域
@@ -797,6 +830,36 @@ fun RenameDialog(
 
                             Text(
                                 text = "示例: 位置2, 删除2个 → \"ABCDE.pdf\" → \"ABE.pdf\"",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                            )
+                        }
+                        // ===== 新增：添加前缀id号 =====
+                        RenameType.ADD_ID_PREFIX -> {
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = "按文件列表顺序自动添加前缀id号（01_、02_...）",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                text = "示例: 01_文件名.pdf, 02_文件名.pdf",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                            )
+                        }
+                        // ===== 新增：添加后缀id号 =====
+                        RenameType.ADD_ID_SUFFIX -> {
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = "按文件列表顺序自动添加后缀id号（_01、_02...）",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                text = "示例: 文件名_01.pdf, 文件名_02.pdf",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
                             )
