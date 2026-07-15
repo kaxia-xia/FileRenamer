@@ -18,7 +18,6 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
@@ -203,6 +202,10 @@ fun MainScreen(
 
 /**
  * 可拖拽排序的文件列表 - 支持连续跨位拖动和边缘自动滚动
+ *
+ * 核心思路：每次 onDrag 只交换一个位置（如果偏移超过阈值），
+ * 然后重置偏移量，让重组后的下一次 onDrag 继续判断。
+ * 这样避免了 while 循环中连续调用 onReorder 导致的状态不同步问题。
  */
 @Composable
 private fun DraggableFileList(
@@ -242,21 +245,21 @@ private fun DraggableFileList(
     var draggedIndex by remember { mutableIntStateOf(-1) }
     var dragOffset by remember { mutableFloatStateOf(0f) }
 
-    // 手指在屏幕上的Y坐标（用于边缘滚动检测）
+    // 手指在item内的Y坐标（用于边缘滚动检测）
     var fingerY by remember { mutableFloatStateOf(0f) }
 
     // 自动滚动控制
     var isAutoScrolling by remember { mutableStateOf(false) }
     var scrollDirection by remember { mutableIntStateOf(0) }
 
-    // 自动滚动协程 - 使用单独的协程作用域，不依赖 LaunchedEffect 重启
+    // 自动滚动协程 - 持续运行，检查状态决定是否滚动
     LaunchedEffect(Unit) {
         while (true) {
             if (isAutoScrolling && draggedIndex >= 0 && scrollDirection != 0) {
-                val scrollPx = scrollDirection * 12 // 加大滚动速度
+                val scrollPx = scrollDirection * 12
                 listState.dispatchRawDelta(scrollPx.toFloat())
             }
-            delay(16) // ~60fps
+            delay(16)
         }
     }
 
@@ -304,7 +307,7 @@ private fun DraggableFileList(
                                 change.consume()
                                 if (draggedIndex < 0) return@detectDragGesturesAfterLongPress
 
-                                // 记录手指位置（用于边缘滚动检测）
+                                // 记录手指在item内的位置
                                 fingerY = change.position.y
 
                                 dragOffset += dragAmount.y
@@ -316,37 +319,35 @@ private fun DraggableFileList(
                                 if (currentItem != null) {
                                     val itemHeight = currentItem.size
 
-                                    // === 连续跨位交换逻辑 ===
+                                    // === 单步交换逻辑 ===
+                                    // 每次 onDrag 最多交换一个位置，交换后重置偏移量，
+                                    // 下一次 onDrag 会基于新位置继续判断
                                     if (itemHeight > 0) {
                                         // 向下拖动：偏移超过一个item高度就交换到下一位置
-                                        while (dragOffset > itemHeight) {
+                                        if (dragOffset > itemHeight) {
                                             val targetIdx = draggedIndex + 1
                                             if (targetIdx < files.size) {
                                                 onReorder(draggedIndex, targetIdx)
                                                 draggedIndex = targetIdx
-                                                dragOffset -= itemHeight
-                                            } else {
-                                                break
+                                                dragOffset = 0f // 重置偏移，让新item从0开始
                                             }
                                         }
                                         // 向上拖动：偏移超过一个item高度就交换到上一位置
-                                        while (dragOffset < -itemHeight) {
+                                        else if (dragOffset < -itemHeight) {
                                             val targetIdx = draggedIndex - 1
                                             if (targetIdx >= 0) {
                                                 onReorder(draggedIndex, targetIdx)
                                                 draggedIndex = targetIdx
-                                                dragOffset += itemHeight
-                                            } else {
-                                                break
+                                                dragOffset = 0f // 重置偏移，让新item从0开始
                                             }
                                         }
                                     }
 
-                                    // === 边缘自动滚动检测（基于手指位置） ===
+                                    // === 边缘自动滚动检测（基于手指全局位置） ===
                                     val viewportHeight = layoutInfo.viewportEndOffset
-                                    val edgeThreshold = with(density) { 100.dp.toPx() } // 加大触发区域
+                                    val edgeThreshold = with(density) { 100.dp.toPx() }
 
-                                    // 手指在屏幕上的全局Y坐标 = item在列表中的偏移 + 手指在item内的位置
+                                    // 手指在屏幕上的全局Y坐标
                                     val fingerGlobalY = currentItem.offset + fingerY
 
                                     val shouldScrollUp = fingerGlobalY < edgeThreshold &&
