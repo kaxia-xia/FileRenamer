@@ -68,6 +68,7 @@ fun FileItemCard(
     onToggle: () -> Unit,
     onDoubleClick: () -> Unit,
     modifier: Modifier = Modifier,
+    onDragHandle: () -> Modifier = { Modifier },
     accentColor: Color = MaterialTheme.colorScheme.primary,
 ) {
     val backgroundColor by animateColorAsState(
@@ -95,9 +96,21 @@ fun FileItemCard(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(12.dp),
+                .padding(start = 4.dp, top = 12.dp, bottom = 12.dp, end = 12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
+            // 拖拽手柄
+            Icon(
+                imageVector = Icons.Default.DragHandle,
+                contentDescription = "拖拽排序",
+                modifier = Modifier
+                    .size(24.dp)
+                    .then(onDragHandle()),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+            )
+
+            Spacer(modifier = Modifier.width(4.dp))
+
             // 图标
             Box(
                 modifier = Modifier

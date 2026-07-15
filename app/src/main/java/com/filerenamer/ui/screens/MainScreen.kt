@@ -1,13 +1,12 @@
 package com.filerenamer.ui.screens
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -21,7 +20,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -30,7 +28,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.zIndex
 import com.filerenamer.data.RenameType
 import com.filerenamer.ui.components.*
-import kotlinx.coroutines.delay
+import sh.calvin.reorderable.*
 
 @Composable
 fun MainScreen(
@@ -145,11 +143,10 @@ fun MainScreen(
 }
 
 /**
- * 可拖拽排序的文件列表
+ * 可拖拽排序的文件列表 - 使用 sh.calvin.reorderable 库
  *
- * 手势处理器放在 LazyColumn 上（key = files.size，拖拽过程中不变），
- * 通过 listState.layoutInfo 实时计算手指位置对应的 item index。
- * detectDragGesturesAfterLongPress 只响应长按后的拖拽，不影响普通滑动。
+ * 每个 item 右侧有一个拖拽手柄图标，长按手柄即可拖动排序。
+ * 点击 item 其他区域触发勾选/取消勾选。
  */
 @Composable
 private fun DraggableFileList(
@@ -172,106 +169,19 @@ private fun DraggableFileList(
         return
     }
 
-    val listState = rememberLazyListState()
-    val density = LocalDensity.current
-
-    val currentFiles by rememberUpdatedState(files)
-    val currentOnReorder by rememberUpdatedState(onReorder)
-
-    var draggedIndex by remember { mutableIntStateOf(-1) }
-    var dragOffset by remember { mutableFloatStateOf(0f) }
-
-    var isAutoScrolling by remember { mutableStateOf(false) }
-    var scrollDirection by remember { mutableIntStateOf(0) }
-
-    LaunchedEffect(Unit) {
-        while (true) {
-            if (isAutoScrolling && draggedIndex >= 0 && scrollDirection != 0) {
-                listState.dispatchRawDelta((scrollDirection * 12).toFloat())
-            }
-            delay(16)
-        }
+    val lazyListState = rememberLazyListState()
+    val reorderableLazyListState = rememberReorderableLazyListState(lazyListState) { from, to ->
+        onReorder(from.index, to.index)
     }
 
     LazyColumn(
-        state = listState,
-        modifier = Modifier
-            .fillMaxSize()
-            .pointerInput(currentFiles.size) {
-                detectDragGesturesAfterLongPress(
-                    onDragStart = { startOffset ->
-                        val layoutInfo = listState.layoutInfo
-                        val item = layoutInfo.visibleItemsInfo.find { itemInfo ->
-                            startOffset.y >= itemInfo.offset &&
-                            startOffset.y < itemInfo.offset + itemInfo.size
-                        }
-                        if (item != null && item.index >= 0 && item.index < currentFiles.size) {
-                            draggedIndex = item.index
-                            dragOffset = 0f
-                            isAutoScrolling = false
-                            scrollDirection = 0
-                        }
-                    },
-                    onDrag = { change, dragAmount ->
-                        change.consume()
-                        if (draggedIndex < 0) return@detectDragGesturesAfterLongPress
-
-                        dragOffset += dragAmount.y
-
-                        val layoutInfo = listState.layoutInfo
-                        val currentItem = layoutInfo.visibleItemsInfo.find { it.index == draggedIndex }
-
-                        if (currentItem != null) {
-                            val itemHeight = currentItem.size
-                            if (itemHeight > 0) {
-                                val threshold = itemHeight * 0.6f
-
-                                while (dragOffset > threshold) {
-                                    val targetIdx = draggedIndex + 1
-                                    if (targetIdx < currentFiles.size) {
-                                        currentOnReorder(draggedIndex, targetIdx)
-                                        draggedIndex = targetIdx
-                                        dragOffset -= itemHeight
-                                    } else break
-                                }
-                                while (dragOffset < -threshold) {
-                                    val targetIdx = draggedIndex - 1
-                                    if (targetIdx >= 0) {
-                                        currentOnReorder(draggedIndex, targetIdx)
-                                        draggedIndex = targetIdx
-                                        dragOffset += itemHeight
-                                    } else break
-                                }
-                            }
-
-                            val viewportHeight = layoutInfo.viewportEndOffset
-                            val edgeThreshold = with(density) { 80.dp.toPx() }
-                            val fingerGlobalY = currentItem.offset + (currentItem.size / 2f) + dragOffset
-
-                            if (fingerGlobalY < edgeThreshold) {
-                                isAutoScrolling = true; scrollDirection = -1
-                            } else if (fingerGlobalY > viewportHeight - edgeThreshold) {
-                                isAutoScrolling = true; scrollDirection = 1
-                            } else {
-                                isAutoScrolling = false; scrollDirection = 0
-                            }
-                        }
-                    },
-                    onDragEnd = {
-                        draggedIndex = -1; dragOffset = 0f
-                        isAutoScrolling = false; scrollDirection = 0
-                    },
-                    onDragCancel = {
-                        draggedIndex = -1; dragOffset = 0f
-                        isAutoScrolling = false; scrollDirection = 0
-                    }
-                )
-            },
+        state = lazyListState,
+        modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(vertical = 8.dp),
     ) {
         item {
             Text(
-                text = "共 ${files.size} 项（长按拖动排序）",
+                text = "共 ${files.size} 项（拖拽手柄排序）",
                 style = MaterialTheme.typography.bodySmall,
                 modifier = Modifier.padding(horizontal = 20.dp, vertical = 4.dp),
                 color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -279,31 +189,34 @@ private fun DraggableFileList(
         }
 
         itemsIndexed(files, key = { _, file -> file.uri.toString() }) { index, file ->
-            val isDragging = draggedIndex == index
-
-            val offsetY by animateDpAsState(
-                targetValue = if (isDragging) with(density) { dragOffset.toDp() } else 0.dp,
-                label = "offsetY"
-            )
-
-            Box(
-                modifier = Modifier
-                    .zIndex(if (isDragging) 1f else 0f)
-                    .graphicsLayer {
-                        translationY = offsetY.toPx()
-                        scaleX = if (isDragging) 1.05f else 1f
-                        scaleY = if (isDragging) 1.05f else 1f
-                        shadowElevation = if (isDragging) 10f else 0f
-                    }
-            ) {
-                FileItemCard(
-                    fileItem = file,
-                    onToggle = { onToggleFile(file) },
-                    onDoubleClick = {
-                        if (file.isDirectory) onEnterDirectory(file)
-                    },
-                    accentColor = accentColor,
+            ReorderableItem(
+                reorderableLazyListState,
+                key = file.uri.toString(),
+            ) { isDragging ->
+                val elevation by animateDpAsState(
+                    if (isDragging) 8.dp else 0.dp, label = "elevation"
                 )
+
+                Box(
+                    modifier = Modifier
+                        .padding(horizontal = 12.dp, vertical = 3.dp)
+                        .zIndex(if (isDragging) 1f else 0f)
+                        .graphicsLayer {
+                            scaleX = if (isDragging) 1.03f else 1f
+                            scaleY = if (isDragging) 1.03f else 1f
+                            shadowElevation = if (isDragging) 10f else 0f
+                        }
+                ) {
+                    FileItemCard(
+                        fileItem = file,
+                        onToggle = { onToggleFile(file) },
+                        onDoubleClick = {
+                            if (file.isDirectory) onEnterDirectory(file)
+                        },
+                        onDragHandle = { Modifier.draggableHandle() },
+                        accentColor = accentColor,
+                    )
+                }
             }
         }
 
@@ -390,7 +303,7 @@ private fun InitialContent(onSelectFolder: () -> Unit, accentColor: Color) {
                     Text("使用说明", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Medium,
                         color = MaterialTheme.colorScheme.onSurface)
                     Spacer(Modifier.height(8.dp))
-                    Text("1. 点击「选择文件夹」按钮\n2. 在系统文件选择器中找到目标文件夹\n3. 浏览文件夹，勾选要重命名的文件和文件夹\n4. 长按文件可拖动排序列表\n5. 点击「批量重命名」选择操作类型\n6. 支持：添加前缀、添加后缀、删除前N个、\n   删除后N个、替换前N个、替换后N个、\n   从前往后第N位插入、从前往后第N位删除、\n   从后往前第N位插入、从后往前第N位删除",
+                    Text("1. 点击「选择文件夹」按钮\n2. 在系统文件选择器中找到目标文件夹\n3. 浏览文件夹，勾选要重命名的文件和文件夹\n4. 拖拽手柄排序列表\n5. 点击「批量重命名」选择操作类型\n6. 支持：添加前缀、添加后缀、删除前N个、\n   删除后N个、替换前N个、替换后N个、\n   从前往后第N位插入、从前往后第N位删除、\n   从后往前第N位插入、从后往前第N位删除",
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, lineHeight = 20.sp)
                 }
             }
