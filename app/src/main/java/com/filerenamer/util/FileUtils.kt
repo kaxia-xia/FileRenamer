@@ -79,7 +79,7 @@ object FileUtils {
                 // 通过父目录查找文件（更可靠的方式）
                 val file = parentDir.findFile(item.name)
                 if (file == null || !file.exists()) {
-                    val reason = "「${item.name}」：找不到该文件"
+                    val reason = "「${item.name}」找不到该文件"
                     Log.e(TAG, reason)
                     failCount++
                     failReasons.add(reason)
@@ -88,18 +88,22 @@ object FileUtils {
 
                 val newNameResult = computeNewName(item.name, file.isDirectory, operation)
                 if (newNameResult == null) {
+                    val reason = "「${item.name}」参数错误，无法计算新文件名"
                     failCount++
+                    failReasons.add(reason)
                     continue
                 }
                 if (!newNameResult.isSuccess) {
-                    val reason = "「${item.name}」：${newNameResult.errorMsg}"
+                    val reason = "「${item.name}」${newNameResult.errorMsg}"
                     failCount++
                     failReasons.add(reason)
                     continue
                 }
                 val newName = newNameResult.name
                 if (newName == item.name) {
+                    val reason = "「${item.name}」新文件名与原名相同，无需修改"
                     failCount++
+                    failReasons.add(reason)
                     continue
                 }
 
@@ -107,12 +111,12 @@ object FileUtils {
                 if (result) {
                     successCount++
                 } else {
-                    val reason = "「${item.name}」：重命名失败（可能权限不足或文件名冲突）"
+                    val reason = "「${item.name}」重命名失败（可能权限不足或文件名冲突）"
                     failCount++
                     failReasons.add(reason)
                 }
             } catch (e: Exception) {
-                val reason = "「${item.name}」：${e.message ?: "未知错误"}"
+                val reason = "「${item.name}」${e.message ?: "未知错误"}"
                 Log.e(TAG, "Error renaming ${item.name}", e)
                 failCount++
                 failReasons.add(reason)
