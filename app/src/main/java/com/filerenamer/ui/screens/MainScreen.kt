@@ -201,11 +201,16 @@ fun MainScreen(
 }
 
 /**
- * 可拖拽排序的文件列表 - 支持连续跨位拖动和边缘自动滚动
+ * 可拖拽排序的文件列表
  *
- * 使用 rememberUpdatedState 确保 pointerInput 内部始终拿到最新的 files 和 onReorder 引用。
- * 每次 onDrag 只交换一个位置，交换后 dragOffset 置零，
- * 下一帧重组后继续判断，从而实现连续跨位拖动。
+ * 每个 item 上设置 pointerInput，使用 rememberUpdatedState 确保回调中拿到最新引用。
+ *
+ * 关键设计：
+ * 1. 交换阈值设为 itemHeight * 0.6（而非完整 itemHeight），让交换更灵敏
+ * 2. 交换后 dragOffset 保留余量（减去/加上 itemHeight），而不是置零
+ *    这样如果用户快速拖动，余量可以累积到下一次交换
+ * 3. 使用 while 循环支持单帧内多次交换（当用户拖得极快时）
+ * 4. 通过 listState.layoutInfo 实时计算位置，不受重组影响
  */
 @Composable
 private fun DraggableFileList(
@@ -241,7 +246,7 @@ private fun DraggableFileList(
     val listState = rememberLazyListState()
     val density = LocalDensity.current
 
-    // 用 rememberUpdatedState 持有最新引用，pointerInput 内部始终能读到最新的值
+    // 用 rememberUpdatedState 持有最新引用
     val currentFiles by rememberUpdatedState(files)
     val currentOnReorder by rememberUpdatedState(onReorder)
 
@@ -249,14 +254,11 @@ private fun DraggableFileList(
     var draggedIndex by remember { mutableIntStateOf(-1) }
     var dragOffset by remember { mutableFloatStateOf(0f) }
 
-    // 手指在item内的Y坐标（用于边缘滚动检测）
-    var fingerY by remember { mutableFloatStateOf(0f) }
-
     // 自动滚动控制
     var isAutoScrolling by remember { mutableStateOf(false) }
     var scrollDirection by remember { mutableIntStateOf(0) }
 
-    // 自动滚动协程 - 持续运行，检查状态决定是否滚动
+    // 自动滚动协程
     LaunchedEffect(Unit) {
         while (true) {
             if (isAutoScrolling && draggedIndex >= 0 && scrollDirection != 0) {
@@ -303,7 +305,6 @@ private fun DraggableFileList(
                             onDragStart = {
                                 draggedIndex = index
                                 dragOffset = 0f
-                                fingerY = 0f
                                 isAutoScrolling = false
                                 scrollDirection = 0
                             },
@@ -311,48 +312,50 @@ private fun DraggableFileList(
                                 change.consume()
                                 if (draggedIndex < 0) return@detectDragGesturesAfterLongPress
 
-                                // 记录手指在item内的位置
-                                fingerY = change.position.y
-
                                 dragOffset += dragAmount.y
 
-                                // 获取当前拖拽item的布局信息
+                                // 通过 layoutInfo 实时计算当前拖拽位置
                                 val layoutInfo = listState.layoutInfo
                                 val currentItem = layoutInfo.visibleItemsInfo.find { it.index == draggedIndex }
 
                                 if (currentItem != null) {
                                     val itemHeight = currentItem.size
 
-                                    // === 单步交换逻辑 ===
-                                    // 每次 onDrag 最多交换一个位置，交换后重置偏移量，
-                                    // 下一帧重组后 draggedIndex 已更新，继续判断
+                                    // === 交换逻辑 ===
+                                    // 阈值设为 0.6 倍 itemHeight，让交换更灵敏
+                                    // 使用 while 循环支持单帧内多次交换
                                     if (itemHeight > 0) {
-                                        // 向下拖动：偏移超过一个item高度就交换到下一位置
-                                        if (dragOffset > itemHeight) {
+                                        val threshold = itemHeight * 0.6f
+
+                                        while (dragOffset > threshold) {
                                             val targetIdx = draggedIndex + 1
                                             if (targetIdx < currentFiles.size) {
                                                 currentOnReorder(draggedIndex, targetIdx)
                                                 draggedIndex = targetIdx
-                                                dragOffset = 0f
+                                                dragOffset -= itemHeight
+                                            } else {
+                                                dragOffset = threshold // 限制最大偏移
+                                                break
                                             }
                                         }
-                                        // 向上拖动：偏移超过一个item高度就交换到上一位置
-                                        else if (dragOffset < -itemHeight) {
+                                        while (dragOffset < -threshold) {
                                             val targetIdx = draggedIndex - 1
                                             if (targetIdx >= 0) {
                                                 currentOnReorder(draggedIndex, targetIdx)
                                                 draggedIndex = targetIdx
-                                                dragOffset = 0f
+                                                dragOffset += itemHeight
+                                            } else {
+                                                dragOffset = -threshold
+                                                break
                                             }
                                         }
                                     }
 
-                                    // === 边缘自动滚动检测（基于手指全局位置） ===
+                                    // === 边缘自动滚动 ===
                                     val viewportHeight = layoutInfo.viewportEndOffset
                                     val edgeThreshold = with(density) { 100.dp.toPx() }
 
-                                    // 手指在屏幕上的全局Y坐标
-                                    val fingerGlobalY = currentItem.offset + fingerY
+                                    val fingerGlobalY = currentItem.offset + (currentItem.size / 2f) + dragOffset
 
                                     val shouldScrollUp = fingerGlobalY < edgeThreshold &&
                                             layoutInfo.visibleItemsInfo.firstOrNull()?.index != 0
@@ -378,14 +381,12 @@ private fun DraggableFileList(
                             onDragEnd = {
                                 draggedIndex = -1
                                 dragOffset = 0f
-                                fingerY = 0f
                                 isAutoScrolling = false
                                 scrollDirection = 0
                             },
                             onDragCancel = {
                                 draggedIndex = -1
                                 dragOffset = 0f
-                                fingerY = 0f
                                 isAutoScrolling = false
                                 scrollDirection = 0
                             }
