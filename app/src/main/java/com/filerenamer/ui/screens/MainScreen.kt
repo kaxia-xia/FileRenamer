@@ -22,7 +22,6 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -32,7 +31,6 @@ import androidx.compose.ui.zIndex
 import com.filerenamer.data.RenameType
 import com.filerenamer.ui.components.*
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
 @Composable
@@ -203,7 +201,7 @@ fun MainScreen(
 }
 
 /**
- * 可拖拽排序的文件列表 - 支持边缘自动滚动
+ * 可拖拽排序的文件列表 - 支持连续跨位拖动和边缘自动滚动
  */
 @Composable
 private fun DraggableFileList(
@@ -237,7 +235,6 @@ private fun DraggableFileList(
     }
 
     val listState = rememberLazyListState()
-    val coroutineScope = rememberCoroutineScope()
     val density = LocalDensity.current
 
     // 拖拽状态
@@ -246,15 +243,15 @@ private fun DraggableFileList(
 
     // 自动滚动控制
     var isAutoScrolling by remember { mutableStateOf(false) }
-    var scrollDirection by remember { mutableIntStateOf(0) } // -1 向上, 1 向下, 0 停止
+    var scrollDirection by remember { mutableIntStateOf(0) }
 
     // 自动滚动协程
     LaunchedEffect(isAutoScrolling, scrollDirection) {
         if (isAutoScrolling && draggedIndex >= 0 && scrollDirection != 0) {
             while (isAutoScrolling) {
-                val scrollPx = scrollDirection * 8 // 每帧滚动8px
+                val scrollPx = scrollDirection * 8
                 listState.dispatchRawDelta(scrollPx.toFloat())
-                delay(16) // ~60fps
+                delay(16)
             }
         }
     }
@@ -300,7 +297,6 @@ private fun DraggableFileList(
                             },
                             onDrag = { change, dragAmount ->
                                 change.consume()
-
                                 if (draggedIndex < 0) return@detectDragGesturesAfterLongPress
 
                                 dragOffset += dragAmount.y
@@ -316,14 +312,12 @@ private fun DraggableFileList(
 
                                     // 边缘自动滚动检测
                                     if (itemCenterY < edgeThreshold && layoutInfo.visibleItemsInfo.firstOrNull()?.index != 0) {
-                                        // 向上滚动
                                         if (!isAutoScrolling || scrollDirection != -1) {
                                             isAutoScrolling = true
                                             scrollDirection = -1
                                         }
                                     } else if (itemCenterY > viewportHeight - edgeThreshold &&
                                         layoutInfo.visibleItemsInfo.lastOrNull()?.let { it.index + 1 } != layoutInfo.totalItemsCount) {
-                                        // 向下滚动
                                         if (!isAutoScrolling || scrollDirection != 1) {
                                             isAutoScrolling = true
                                             scrollDirection = 1
@@ -333,17 +327,26 @@ private fun DraggableFileList(
                                         scrollDirection = 0
                                     }
 
-                                    // 计算交换位置
+                                    // === 连续跨位交换逻辑 ===
                                     val itemHeight = currentItem.size
                                     if (itemHeight > 0) {
-                                        val displacement = dragOffset / itemHeight
-                                        val targetIdx = (draggedIndex + displacement.roundToInt())
-                                            .coerceIn(0, files.size - 1)
-
-                                        if (targetIdx != draggedIndex) {
-                                            onReorder(draggedIndex, targetIdx)
-                                            draggedIndex = targetIdx
-                                            dragOffset = 0f
+                                        // 向下拖动：偏移超过半个item高度就交换到下一位置
+                                        if (dragOffset > itemHeight * 0.5f) {
+                                            val targetIdx = draggedIndex + 1
+                                            if (targetIdx < files.size) {
+                                                onReorder(draggedIndex, targetIdx)
+                                                draggedIndex = targetIdx
+                                                dragOffset -= itemHeight // 减去已消耗的偏移，保留余量
+                                            }
+                                        }
+                                        // 向上拖动：偏移超过半个item高度就交换到上一位置
+                                        else if (dragOffset < -itemHeight * 0.5f) {
+                                            val targetIdx = draggedIndex - 1
+                                            if (targetIdx >= 0) {
+                                                onReorder(draggedIndex, targetIdx)
+                                                draggedIndex = targetIdx
+                                                dragOffset += itemHeight // 加上已消耗的偏移，保留余量
+                                            }
                                         }
                                     }
                                 }
